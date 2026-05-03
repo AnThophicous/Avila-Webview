@@ -31,6 +31,9 @@ try
         case "package":
             await PackageAsync(options);
             break;
+        case "verify":
+            await VerifyBundleAsync(options);
+            break;
         case "check":
             await CheckAsync(options);
             break;
@@ -120,8 +123,13 @@ async Task BuildAsync(CliOptions cliOptions)
 
 async Task PackageAsync(CliOptions cliOptions)
 {
-    var result = await new PackageService(logger).PackageAsync(cliOptions.ProjectPath);
+    var result = await new PackageService(logger).PackageAsync(cliOptions.ProjectPath, cliOptions.SecureBundle);
     Console.WriteLine($"Package created: {result.ExePath}");
+    if (!string.IsNullOrWhiteSpace(result.BundlePath))
+    {
+        Console.WriteLine($"Bundle created: {result.BundlePath}");
+        Console.WriteLine($"Bundle manifest: {result.BundleManifestPath}");
+    }
     Console.WriteLine(ReportFormatter.Format(result.Report));
 }
 
@@ -145,12 +153,32 @@ async Task AuditAsync(CliOptions cliOptions)
     var packageIssues = Directory.Exists(packagePath)
         ? PackageService.FindDisallowedPackageFiles(packagePath).ToArray()
         : Array.Empty<string>();
+    SecureBundleVerificationResult? bundleVerification = null;
+
+    if (Directory.Exists(packagePath))
+    {
+        var bundlePath = Path.Combine(packagePath, SecureBundleReader.BundleFileName);
+        var manifestPath = Path.Combine(packagePath, SecureBundleReader.ManifestFileName);
+        var signaturePath = Path.Combine(packagePath, SecureBundleReader.SignatureFileName);
+        var publicKeyPath = Path.Combine(packagePath, SecureBundleReader.PublicKeyFileName);
+
+        if (File.Exists(bundlePath) && File.Exists(manifestPath) && File.Exists(signaturePath) && File.Exists(publicKeyPath))
+        {
+            bundleVerification = await SecureBundleReader.VerifyAsync(
+                bundlePath,
+                await File.ReadAllTextAsync(publicKeyPath).ConfigureAwait(false)).ConfigureAwait(false);
+        }
+    }
 
     Console.WriteLine("Security audit");
     Console.WriteLine($"Project: {project.Manifest.App.Name}");
     Console.WriteLine($"Manifest: {(validation.Errors.Any() ? "fail" : "ok")} ({validation.Errors.Count()} errors, {validation.Warnings.Count()} warnings)");
     Console.WriteLine($"Policy: {(policy.HasErrors ? "fail" : "ok")} ({policy.Issues.Count} issues)");
     Console.WriteLine($"Package: {(packageIssues.Length > 0 ? "fail" : "ok")} ({packageIssues.Length} blocked files)");
+    if (bundleVerification is not null)
+    {
+        Console.WriteLine($"Secure bundle: ok ({bundleVerification.FileCount} files, {bundleVerification.BundleSha256})");
+    }
 
     foreach (var issue in validation.Errors)
     {
@@ -172,10 +200,43 @@ async Task AuditAsync(CliOptions cliOptions)
         Console.WriteLine($"[package:block] {Path.GetRelativePath(packagePath, file)}");
     }
 
-    if (validation.Errors.Any() || validation.Warnings.Any() || policy.Issues.Any() || packageIssues.Length > 0)
+    if (bundleVerification is not null)
+    {
+        Console.WriteLine($"[bundle:ok] {Path.GetFileName(bundleVerification.BundlePath)}");
+    }
+
+    if (validation.Errors.Any() || validation.Warnings.Any() || policy.Issues.Any() || packageIssues.Length > 0 || (cliOptions.Production && bundleVerification is null))
     {
         Environment.ExitCode = 2;
     }
+}
+
+async Task VerifyBundleAsync(CliOptions cliOptions)
+{
+    var target = cliOptions.Positionals.FirstOrDefault();
+    if (string.IsNullOrWhiteSpace(target))
+    {
+        throw new ArgumentException("Usage: avila verify <bundle-path|bundle-directory>");
+    }
+
+    var bundlePath = SecureBundleReader.ResolveBundlePath(target);
+    var publicKeyPath = SecureBundleReader.ResolveSidecarPath(bundlePath, SecureBundleReader.PublicKeyFileName);
+    if (!File.Exists(publicKeyPath))
+    {
+        throw new FileNotFoundException("Could not find the secure bundle public key sidecar.", publicKeyPath);
+    }
+
+    var verification = await SecureBundleReader.VerifyAsync(
+        bundlePath,
+        await File.ReadAllTextAsync(publicKeyPath).ConfigureAwait(false)).ConfigureAwait(false);
+
+    Console.WriteLine("Secure bundle verification");
+    Console.WriteLine($"Bundle: {verification.BundlePath}");
+    Console.WriteLine($"Manifest: {verification.ManifestPath}");
+    Console.WriteLine($"Signature: {verification.SignaturePath}");
+    Console.WriteLine($"Files: {verification.FileCount}");
+    Console.WriteLine($"SHA256: {verification.BundleSha256}");
+    Console.WriteLine($"Extraction root: {verification.ExtractionRoot}");
 }
 
 async Task PublishReleaseAsync(CliOptions cliOptions)
@@ -281,9 +342,10 @@ Usage:
   avila dev [--project <path>] [--devtools]
   avila run [--project <path>]
   avila build [--project <path>]
-  avila package [--project <path>]
+  avila package [--project <path>] [--secure]
+  avila verify <bundle-path|bundle-directory>
   avila check [--project <path>] [--security]
-  avila audit [--project <path>]
+  avila audit [--project <path>] [--production]
   avila publish [--sign] [--output <path>] [--runtime <rid>]
   avila benchmark [--project <path>]
   avila version
@@ -315,6 +377,10 @@ internal sealed class CliOptions
 
     public bool Security { get; init; }
 
+    public bool SecureBundle { get; init; }
+
+    public bool Production { get; init; }
+
     public bool Sign { get; init; }
 
     public bool Verbose { get; init; }
@@ -330,6 +396,8 @@ internal sealed class CliOptions
         string? runtimeIdentifier = null;
         var devTools = false;
         var security = false;
+        var secureBundle = false;
+        var production = false;
         var sign = false;
         var verbose = false;
         var positionals = new List<string>();
@@ -354,11 +422,17 @@ internal sealed class CliOptions
                 case "--runtime" when index + 1 < args.Length:
                     runtimeIdentifier = args[++index];
                     break;
+                case "--secure":
+                    secureBundle = true;
+                    break;
                 case "--devtools":
                     devTools = true;
                     break;
                 case "--security":
                     security = true;
+                    break;
+                case "--production":
+                    production = true;
                     break;
                 case "--sign":
                     sign = true;
@@ -381,6 +455,8 @@ internal sealed class CliOptions
             RuntimeIdentifier = runtimeIdentifier,
             DevTools = devTools,
             Security = security,
+            SecureBundle = secureBundle,
+            Production = production,
             Sign = sign,
             Verbose = verbose,
             Positionals = positionals

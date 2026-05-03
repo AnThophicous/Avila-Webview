@@ -2,6 +2,11 @@
 
 `buildclear/dist` is the clean release snapshot. It is the last packaged output mirrored from the source repository.
 
+Avila supports two distribution shapes:
+
+- folder mode: `dist/app` is exposed and WebView2 loads files from the app folder
+- secure bundle mode: frontend files are sealed into `app.avila.bundle`, verified on boot, and served by the runtime from the verified bundle
+
 ## Included
 
 ```txt
@@ -12,10 +17,28 @@ buildclear/
     <OutputName>.avwmeta.json
     Versionate.txt
     build-report.txt
+    logs/
     app/
       avila.json
       src/
+```
+
+Secure bundle mode mirrors the sealed bundle instead of exposing the app folder:
+
+```txt
+buildclear/
+  Versionate.txt
+  dist/
+    <OutputName>.exe
+    <OutputName>.avwmeta.json
+    Versionate.txt
+    build-report.txt
     logs/
+    app.avila.bundle
+    app.avila.bundle.manifest.json
+    app.avila.bundle.sig
+    app.avila.bundle.publickey.txt
+    app.avila.bundle.sha256.txt
 ```
 
 ## Excluded
@@ -43,6 +66,6 @@ buildclear/
 
 ## Packaging Behavior
 
-In source mode, `avila package` publishes the runtime, copies the app into `dist/app`, writes the metadata and report files, and stores `Versionate.txt` next to the packaged EXE.
+In source mode, `avila package` publishes the runtime, copies the app into `dist/app`, writes the metadata and report files, and stores `Versionate.txt` next to the packaged EXE. With `--secure`, the app folder is replaced by the sealed bundle and the runtime verifies integrity before loading the app.
 
 After that, `buildclear/dist` is reset and mirrored from the final package output. The mirror is intentionally clean so launcher and smoke-test runs always point at the latest release.

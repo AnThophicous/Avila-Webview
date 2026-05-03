@@ -81,7 +81,7 @@ public static class ProjectLocator
     public static async Task<AvilaProject> LoadProjectAsync(string? explicitProjectPath, CancellationToken cancellationToken = default)
     {
         var path = ResolveProjectPath(explicitProjectPath);
-        return await ManifestLoader.LoadProjectAsync(path, cancellationToken).ConfigureAwait(false);
+        return await ManifestLoader.LoadProjectAsync(path, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     private static string? WalkUpForRuntimeProject(string start)

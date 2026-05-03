@@ -14,7 +14,7 @@ internal static class Program
         var options = RuntimeOptions.Parse(args);
         try
         {
-            var project = ManifestLoader.LoadProjectAsync(options.ProjectPath).GetAwaiter().GetResult();
+            var project = ManifestLoader.LoadProjectAsync(options.ProjectPath, BundleSeal.PublicKeyBase64).GetAwaiter().GetResult();
             var validation = ManifestLoader.Validate(project);
             if (!validation.IsValid)
             {

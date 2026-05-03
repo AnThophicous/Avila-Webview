@@ -6,7 +6,15 @@ namespace Avila.Packager;
 
 public sealed record BuildResult(AvilaProject Project, string BuildDirectory, SecurityBuildReport Report);
 
-public sealed record PackageResult(AvilaProject Project, string ExePath, string DistDirectory, SecurityBuildReport Report);
+public sealed record PackageResult(
+    AvilaProject Project,
+    string ExePath,
+    string DistDirectory,
+    SecurityBuildReport Report,
+    string? BundlePath = null,
+    string? BundleManifestPath = null,
+    string? BundleSignaturePath = null,
+    string? BundlePublicKeyPath = null);
 
 public sealed class BuildService
 {

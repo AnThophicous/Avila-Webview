@@ -41,6 +41,9 @@ public sealed class AvilaManifest
     [JsonPropertyName("build")]
     public BuildManifest Build { get; set; } = new();
 
+    [JsonPropertyName("package")]
+    public PackageManifest Package { get; set; } = new();
+
     [JsonPropertyName("frontend")]
     public FrontendManifest Frontend { get; set; } = new();
 
@@ -289,6 +292,27 @@ public sealed class BuildManifest
 
     [JsonPropertyName("outputName")]
     public string OutputName { get; set; } = "";
+}
+
+public sealed class PackageManifest
+{
+    [JsonPropertyName("secureBundle")]
+    public bool SecureBundle { get; set; }
+
+    [JsonPropertyName("signBundle")]
+    public bool SignBundle { get; set; } = true;
+
+    [JsonPropertyName("verifyOnStartup")]
+    public bool VerifyOnStartup { get; set; } = true;
+
+    [JsonPropertyName("serveFromBundle")]
+    public bool ServeFromBundle { get; set; } = true;
+
+    [JsonPropertyName("removeSourceMaps")]
+    public bool RemoveSourceMaps { get; set; } = true;
+
+    [JsonPropertyName("exposeAppFolder")]
+    public bool ExposeAppFolder { get; set; }
 }
 
 public sealed class FrontendManifest

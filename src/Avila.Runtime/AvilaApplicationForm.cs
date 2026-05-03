@@ -23,6 +23,10 @@ public sealed class AvilaApplicationForm : Form
     private readonly WebView2 _webView = new();
     private readonly Win32WindowController _windowController;
     private readonly NativeShellGateway _nativeShell;
+    private readonly bool _secureBundleEnabled;
+    private SecureBundleHost? _secureBundleHost;
+    private FileSystemWatcher? _devWatcher;
+    private System.Threading.Timer? _devReloadTimer;
     private RemoteWebViewManager? _remoteWebViews;
     private BridgeHost? _bridge;
 
@@ -44,6 +48,7 @@ public sealed class AvilaApplicationForm : Form
         _nodeHost = new NodeHostGateway(project, options, logger);
         _logDirectory = logDirectory;
         _windowController = new Win32WindowController(this);
+        _secureBundleEnabled = !string.IsNullOrWhiteSpace(project.BundlePath);
 
         Text = project.Manifest.App.Name;
         ApplyAppIcon();
@@ -86,6 +91,9 @@ public sealed class AvilaApplicationForm : Form
     {
         base.OnFormClosed(e);
         _nativeShell.Dispose();
+        _secureBundleHost?.Dispose();
+        _devWatcher?.Dispose();
+        _devReloadTimer?.Dispose();
         _remoteWebViews?.Dispose();
         await _workers.DisposeAsync().ConfigureAwait(false);
     }
@@ -113,6 +121,11 @@ public sealed class AvilaApplicationForm : Form
         }
 
         ConfigureWebViewSettings();
+        if (_secureBundleEnabled && _project.BundlePath is not null)
+        {
+            _secureBundleHost = new SecureBundleHost(_webView.CoreWebView2, _project.RootPath, _project.Manifest.App.Entry);
+            _secureBundleHost.Attach();
+        }
         if (!IsBrowserAppMode())
         {
             ConfigureBridge();
@@ -126,7 +139,12 @@ public sealed class AvilaApplicationForm : Form
             await _webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(script).ConfigureAwait(true);
         }
 
-        if (!IsBrowserAppMode())
+        if (_options.Mode.Equals("dev", StringComparison.OrdinalIgnoreCase) && !IsBrowserAppMode() && !_secureBundleEnabled)
+        {
+            StartDevHotReload();
+        }
+
+        if (!IsBrowserAppMode() && !_secureBundleEnabled)
         {
             _webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
                 OriginPolicy.VirtualHost,
@@ -141,6 +159,11 @@ public sealed class AvilaApplicationForm : Form
             {
                 _webView.CoreWebView2.Navigate(browserUrl);
             }
+        }
+        else if (_secureBundleEnabled)
+        {
+            var entryPath = _project.Manifest.App.Entry.Replace('\\', '/').TrimStart('/');
+            _webView.CoreWebView2.Navigate($"https://{OriginPolicy.VirtualHost}/{entryPath}");
         }
         else
         {
@@ -504,5 +527,84 @@ public sealed class AvilaApplicationForm : Form
             FileName = uri,
             UseShellExecute = true
         });
+    }
+
+    private void StartDevHotReload()
+    {
+        _devReloadTimer ??= new System.Threading.Timer(_ =>
+        {
+            if (_webView.IsDisposed || _webView.CoreWebView2 is null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (_webView.InvokeRequired)
+                {
+                    _webView.BeginInvoke(() => _webView.CoreWebView2.Reload());
+                }
+                else
+                {
+                    _webView.CoreWebView2.Reload();
+                }
+            }
+            catch
+            {
+            }
+        }, null, Timeout.Infinite, Timeout.Infinite);
+
+        _devWatcher = new FileSystemWatcher(_project.RootPath)
+        {
+            IncludeSubdirectories = true,
+            EnableRaisingEvents = true,
+            NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
+            Filter = "*.*"
+        };
+
+        _devWatcher.Changed += (_, e) => OnDevFileChanged(e.FullPath);
+        _devWatcher.Created += (_, e) => OnDevFileChanged(e.FullPath);
+        _devWatcher.Deleted += (_, e) => OnDevFileChanged(e.FullPath);
+        _devWatcher.Renamed += (_, e) => OnDevFileChanged(e.FullPath);
+    }
+
+    private void OnDevFileChanged(string path)
+    {
+        if (ShouldIgnoreDevChange(path))
+        {
+            return;
+        }
+
+        ScheduleDevReload();
+    }
+
+    private bool ShouldIgnoreDevChange(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var relative = Path.GetRelativePath(_project.RootPath, fullPath);
+        var segments = relative.Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries);
+        var ignored = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "build",
+            "dist",
+            "logs",
+            "node_modules",
+            "webview2-data",
+            "bin",
+            "obj",
+            ".git"
+        };
+
+        return segments.Any(ignored.Contains);
+    }
+
+    private void ScheduleDevReload()
+    {
+        if (_devReloadTimer is null)
+        {
+            return;
+        }
+
+        _devReloadTimer.Change(350, Timeout.Infinite);
     }
 }

@@ -115,6 +115,7 @@ public sealed class ProjectScaffolder
                 ["os.exec"] = false
             },
             Performance = new PerformanceManifest(),
+            Package = new PackageManifest(),
             Frontend = new FrontendManifest
             {
                 Framework = "vanilla",

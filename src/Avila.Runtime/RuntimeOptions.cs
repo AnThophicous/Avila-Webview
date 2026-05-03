@@ -1,3 +1,5 @@
+using Avila.Security;
+
 namespace Avila.Runtime;
 
 public sealed class RuntimeOptions
@@ -47,6 +49,12 @@ public sealed class RuntimeOptions
 
     private static string ResolveDefaultProjectPath()
     {
+        if (File.Exists(Path.Combine(AppContext.BaseDirectory, SecureBundleReader.BundleFileName))
+            || File.Exists(Path.Combine(AppContext.BaseDirectory, SecureBundleReader.ManifestFileName)))
+        {
+            return AppContext.BaseDirectory;
+        }
+
         var packagedApp = Path.Combine(AppContext.BaseDirectory, "app");
         if (File.Exists(Path.Combine(packagedApp, "avila.json")))
         {
