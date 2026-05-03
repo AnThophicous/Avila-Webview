@@ -17,6 +17,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Avila.Core\Avila.Core.csproj" />
+    <ProjectReference Include="..\..\src\Avila.Bridge\Avila.Bridge.csproj" />
+    <ProjectReference Include="..\..\src\Avila.Diagnostics\Avila.Diagnostics.csproj" />
     <ProjectReference Include="..\..\src\Avila.Packager\Avila.Packager.csproj" />
     <ProjectReference Include="..\..\src\Avila.Security\Avila.Security.csproj" />
   </ItemGroup>

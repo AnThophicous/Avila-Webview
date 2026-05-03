@@ -27,10 +27,10 @@ required in source control.
 
 ## Release Identity
 
-Avila uses a calendar-based release marker. The first official release is:
+Avila uses a calendar-based release marker. The current official patch release is:
 
 ```txt
-26.0 Release
+26.0.1 Startup | Release
 ```
 
 That value is stored in `Versionate.txt` and is resolved by the CLI and
@@ -41,10 +41,18 @@ packaging pipeline.
 1. Update code and docs.
 2. Run `dotnet build` and `dotnet test`.
 3. Run `avila build` on the target project or template.
-4. Run `avila package` to produce the clean EXE output.
-5. Inspect the generated package and the local `buildclear/dist` snapshot.
-6. Commit the source changes only.
-7. Push to GitHub.
+4. Run `avila package` to produce the clean EXE output for apps.
+5. Publish the CLI once to a bootstrap folder, then run `avila publish` from that compiled executable.
+6. Inspect the generated package, release bundle, and the local `buildclear/dist` snapshot.
+7. Commit the source changes only.
+8. Push the branch and tag to GitHub.
+
+Example release bootstrap:
+
+```powershell
+dotnet publish .\src\Avila.CLI\Avila.CLI.csproj -c Release -r win-x64 -o .\buildclear\bootstrap-cli --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -p:PublishReadyToRun=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false
+.\buildclear\bootstrap-cli\avila.exe publish --output .\buildclear\release
+```
 
 ## Safety Rules
 
@@ -66,6 +74,7 @@ Avila is meant to feel like an engine, not a pre-branded app.
 ## If You Need a Shipping Build
 
 Use the packaging pipeline locally and publish the source repo separately from
-any installer or binary release. If a binary release is needed later, create it
-from the clean package output and attach it as a GitHub Release artifact rather
-than checking the build output into source control.
+any installer or binary release. The GitHub Release should carry the compiled
+bundle so developers can download Avila ready to run without building from
+source. For source-tree release generation, use a compiled bootstrap CLI first
+so the running process does not lock its own build output.

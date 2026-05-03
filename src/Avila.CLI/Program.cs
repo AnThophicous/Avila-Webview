@@ -1,6 +1,7 @@
 using Avila.Core;
 using Avila.Diagnostics;
 using Avila.Packager;
+using Avila.Security;
 using System.Diagnostics;
 
 var command = args.Length == 0 ? "help" : args[0].ToLowerInvariant();
@@ -11,6 +12,7 @@ try
 {
     switch (command)
     {
+        case "new":
         case "create":
             await CreateAsync(options);
             break;
@@ -28,6 +30,15 @@ try
             break;
         case "package":
             await PackageAsync(options);
+            break;
+        case "check":
+            await CheckAsync(options);
+            break;
+        case "audit":
+            await AuditAsync(options);
+            break;
+        case "publish":
+            await PublishReleaseAsync(options);
             break;
         case "benchmark":
             await BenchmarkAsync(options);
@@ -114,6 +125,71 @@ async Task PackageAsync(CliOptions cliOptions)
     Console.WriteLine(ReportFormatter.Format(result.Report));
 }
 
+async Task CheckAsync(CliOptions cliOptions)
+{
+    if (cliOptions.Security)
+    {
+        await AuditAsync(cliOptions).ConfigureAwait(false);
+        return;
+    }
+
+    await DoctorAsync(cliOptions).ConfigureAwait(false);
+}
+
+async Task AuditAsync(CliOptions cliOptions)
+{
+    var project = await ProjectLocator.LoadProjectAsync(cliOptions.ProjectPath).ConfigureAwait(false);
+    var validation = ManifestLoader.Validate(project);
+    var policy = PolicyResolver.Resolve(project, "production");
+    var packagePath = Path.Combine(project.RootPath, "dist");
+    var packageIssues = Directory.Exists(packagePath)
+        ? PackageService.FindDisallowedPackageFiles(packagePath).ToArray()
+        : Array.Empty<string>();
+
+    Console.WriteLine("Security audit");
+    Console.WriteLine($"Project: {project.Manifest.App.Name}");
+    Console.WriteLine($"Manifest: {(validation.Errors.Any() ? "fail" : "ok")} ({validation.Errors.Count()} errors, {validation.Warnings.Count()} warnings)");
+    Console.WriteLine($"Policy: {(policy.HasErrors ? "fail" : "ok")} ({policy.Issues.Count} issues)");
+    Console.WriteLine($"Package: {(packageIssues.Length > 0 ? "fail" : "ok")} ({packageIssues.Length} blocked files)");
+
+    foreach (var issue in validation.Errors)
+    {
+        Console.WriteLine($"[manifest:error] {issue.Code}: {issue.Message}");
+    }
+
+    foreach (var warning in validation.Warnings)
+    {
+        Console.WriteLine($"[manifest:warning] {warning.Code}: {warning.Message}");
+    }
+
+    foreach (var issue in policy.Issues)
+    {
+        Console.WriteLine($"[policy:{issue.Severity.ToString().ToLowerInvariant()}] {issue.Code}: {issue.Message}");
+    }
+
+    foreach (var file in packageIssues)
+    {
+        Console.WriteLine($"[package:block] {Path.GetRelativePath(packagePath, file)}");
+    }
+
+    if (validation.Errors.Any() || validation.Warnings.Any() || policy.Issues.Any() || packageIssues.Length > 0)
+    {
+        Environment.ExitCode = 2;
+    }
+}
+
+async Task PublishReleaseAsync(CliOptions cliOptions)
+{
+    var result = await new ReleaseService(logger).PublishAsync(
+        outputDirectory: cliOptions.OutputPath,
+        sign: cliOptions.Sign,
+        runtimeIdentifier: cliOptions.RuntimeIdentifier ?? "win-x64").ConfigureAwait(false);
+
+    Console.WriteLine($"Release bundle: {result.ZipPath}");
+    Console.WriteLine($"SHA256: {result.Sha256Path}");
+    Console.WriteLine($"Version: {result.VersionText}");
+}
+
 async Task BenchmarkAsync(CliOptions cliOptions)
 {
     var buildService = new BuildService(logger);
@@ -195,9 +271,10 @@ async Task RunRuntimeAsync(CliOptions cliOptions, string mode)
 void PrintHelp()
 {
     Console.WriteLine("""
-Avila Tooling CLI
+ Avila Tooling CLI
 
 Usage:
+  avila new <app-name>
   avila create app <app-name>
   avila create <app-name> [--url <site>] [--template browser-app|browser|vanilla|react|...]
   avila init <app-name>
@@ -205,6 +282,9 @@ Usage:
   avila run [--project <path>]
   avila build [--project <path>]
   avila package [--project <path>]
+  avila check [--project <path>] [--security]
+  avila audit [--project <path>]
+  avila publish [--sign] [--output <path>] [--runtime <rid>]
   avila benchmark [--project <path>]
   avila version
   avila doctor [--project <path>]
@@ -227,7 +307,15 @@ internal sealed class CliOptions
 
     public string? Url { get; init; }
 
+    public string? OutputPath { get; init; }
+
+    public string? RuntimeIdentifier { get; init; }
+
     public bool DevTools { get; init; }
+
+    public bool Security { get; init; }
+
+    public bool Sign { get; init; }
 
     public bool Verbose { get; init; }
 
@@ -238,7 +326,11 @@ internal sealed class CliOptions
         string? projectPath = null;
         string? template = null;
         string? url = null;
+        string? outputPath = null;
+        string? runtimeIdentifier = null;
         var devTools = false;
+        var security = false;
+        var sign = false;
         var verbose = false;
         var positionals = new List<string>();
 
@@ -256,8 +348,20 @@ internal sealed class CliOptions
                 case "--url" when index + 1 < args.Length:
                     url = args[++index];
                     break;
+                case "--output" when index + 1 < args.Length:
+                    outputPath = args[++index];
+                    break;
+                case "--runtime" when index + 1 < args.Length:
+                    runtimeIdentifier = args[++index];
+                    break;
                 case "--devtools":
                     devTools = true;
+                    break;
+                case "--security":
+                    security = true;
+                    break;
+                case "--sign":
+                    sign = true;
                     break;
                 case "--verbose":
                     verbose = true;
@@ -273,7 +377,11 @@ internal sealed class CliOptions
             ProjectPath = projectPath,
             Template = template,
             Url = url,
+            OutputPath = outputPath,
+            RuntimeIdentifier = runtimeIdentifier,
             DevTools = devTools,
+            Security = security,
+            Sign = sign,
             Verbose = verbose,
             Positionals = positionals
         };

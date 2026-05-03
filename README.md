@@ -4,11 +4,15 @@ Avila is a Windows-first desktop engine for HTML, CSS, and JavaScript apps. It c
 
 ## Commands
 
+- `avila new` creates an app project.
 - `avila create app <name>` creates an app project.
 - `avila create <name> --url <site>` creates a `browser-app` project.
 - `avila dev` runs an `AppView` project in WebView2.
 - `avila build` validates `avila.json` and writes a build report.
 - `avila package` publishes a production EXE and copies the app into `dist/app`.
+- `avila check` runs the main validation pass.
+- `avila audit` runs the strict security audit.
+- `avila publish` builds the engine release bundle.
 - `avila benchmark` measures build/package time and output size.
 - `avila version` prints the current engine release marker from `Versionate.txt`.
 - `avila doctor` checks Windows x64, .NET SDK, WebView2 Runtime, and manifest issues.
@@ -20,12 +24,15 @@ For a detailed release and publish flow, see `docs/publishing.md`.
 ## Quick Start
 
 ```powershell
-dotnet run --project src/Avila.CLI -- create app meu-app
-dotnet run --project src/Avila.CLI -- create meu-site --url https://meusite.com
-dotnet run --project src/Avila.CLI -- dev --project .\meu-app.avw --devtools
-dotnet run --project src/Avila.CLI -- build --project .\meu-app.avw
-dotnet run --project src/Avila.CLI -- package --project .\meu-app.avw
+avila create app meu-app
+cd meu-app
+avila dev
+avila build
+avila package
 ```
+
+Download the compiled release asset from GitHub Releases if you want the
+engine and tooling ready to run without building the source tree yourself.
 
 ## Runtime Shape
 

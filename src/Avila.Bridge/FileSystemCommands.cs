@@ -341,32 +341,20 @@ public sealed partial class BridgeCommandRegistry
 
     private static string ResolveInsideRoot(string rootPath, string relativePath)
     {
-        var normalized = (relativePath ?? "").Replace('\\', '/').TrimStart('/');
-        if (normalized is "" or ".")
+        var normalized = string.IsNullOrWhiteSpace(relativePath) ? "." : relativePath;
+        if (normalized is ".")
         {
-            return Path.GetFullPath(rootPath);
+            return SafePath.ResolveInside(rootPath, ".");
         }
 
-        if (Path.IsPathRooted(normalized))
+        try
         {
-            throw new BridgeException(BridgeErrorCodes.InvalidRequest, "Path must be relative to its root.");
+            return SafePath.ResolveInside(rootPath, normalized);
         }
-
-        var segments = normalized.Split('/');
-        if (segments.Any(segment => segment is "" or "." or ".."))
+        catch (UnauthorizedAccessException exception)
         {
-            throw new BridgeException(BridgeErrorCodes.InvalidRequest, "Path contains an unsafe segment.");
+            throw new BridgeException(BridgeErrorCodes.PermissionDenied, exception.Message);
         }
-
-        var root = Path.GetFullPath(rootPath);
-        var resolved = Path.GetFullPath(Path.Combine(root, Path.Combine(segments)));
-        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        if (!resolved.Equals(root, comparison) && !resolved.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, comparison))
-        {
-            throw new BridgeException(BridgeErrorCodes.PermissionDenied, "Path escapes the allowed root.");
-        }
-
-        return resolved;
     }
 
     private static async Task EnsureFileSizeAsync(string path, long maxBytes, CancellationToken cancellationToken)

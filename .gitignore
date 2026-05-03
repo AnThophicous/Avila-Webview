@@ -9,3 +9,4 @@ build/
 **/.avila-webview/
 **/webview2-data/
 **/logs/
+buildclear/release/

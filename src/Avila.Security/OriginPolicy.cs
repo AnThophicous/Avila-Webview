@@ -46,14 +46,20 @@ public sealed class OriginPolicy
             return "";
         }
 
+        if (uri.Scheme.Equals("file", StringComparison.OrdinalIgnoreCase))
+        {
+            return LocalOrigin;
+        }
+
         if (uri.Host.Equals(VirtualHost, StringComparison.OrdinalIgnoreCase))
         {
             return LocalOrigin;
         }
 
-        if (uri.IsFile)
+        if (!uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase)
+            && !uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase))
         {
-            return LocalOrigin;
+            return "";
         }
 
         return uri.IsDefaultPort

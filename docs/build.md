@@ -5,8 +5,11 @@ The packaging pipeline is intentionally simple and auditable in the MVP.
 ## Commands
 
 ```powershell
-dotnet run --project src/Avila.CLI -- build --project .\my-app.avw
-dotnet run --project src/Avila.CLI -- package --project .\my-app.avw
+avila check --project .\my-app.avw
+avila build --project .\my-app.avw
+avila package --project .\my-app.avw
+avila audit --project .\my-app.avw
+avila publish
 ```
 
 ## Pipeline
@@ -21,6 +24,7 @@ dotnet run --project src/Avila.CLI -- package --project .\my-app.avw
 8. Validate that no dev-only or secret-like files are present.
 9. Write `<OutputName>.avwmeta.json`, `build-report.txt`, and `Versionate.txt`.
 10. Mirror the final distributable into `buildclear/dist` when the repository root is available, and copy the release marker next to it.
+11. Use `avila publish` for the compiled engine bundle that users can download directly.
 
 ## Output
 
@@ -57,9 +61,10 @@ dotnet run --project src/Avila.CLI -- inspect package --project .\my-app.avw
 ```
 
 `inspect apis` lists registered bridge commands with current allow/deny status. `inspect permissions` explains manifest permission state and validation issues. `inspect package` scans `dist` for package size and blocked files.
+`check` is the fast validation pass. `audit` is the strict security pass. `publish` is the compiled engine bundle flow.
 
 The `package` command also keeps `buildclear/dist` synced with the latest release when Avila is running from the source repository. That folder is the clean latest-release snapshot for launcher and smoke-test use.
-`Versionate.txt` is the single release marker. For the first official release, the file contains `26.0 Release`.
+`Versionate.txt` is the single release marker. For the current official patch release, the file contains `26.0.1 Startup | Release`.
 
 ## Roadmap
 
