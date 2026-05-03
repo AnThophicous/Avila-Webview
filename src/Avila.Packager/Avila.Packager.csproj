@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <EmbeddedResource Include="assets\icon.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Avila.Core\Avila.Core.csproj" />
+    <ProjectReference Include="..\Avila.Bridge\Avila.Bridge.csproj" />
+    <ProjectReference Include="..\Avila.Diagnostics\Avila.Diagnostics.csproj" />
+    <ProjectReference Include="..\Avila.Security\Avila.Security.csproj" />
+  </ItemGroup>
+</Project>

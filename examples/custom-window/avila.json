@@ -1,0 +1,72 @@
+{
+  "app": {
+    "id": "com.example.customwindow",
+    "name": "Custom Window",
+    "version": "1.0.0",
+    "entry": "src/index.html",
+    "icon": ""
+  },
+  "window": {
+    "width": 1040,
+    "height": 680,
+    "minWidth": 720,
+    "minHeight": 480,
+    "center": true,
+    "resizable": true,
+    "borderless": true,
+    "roundedCorners": true,
+    "cornerPreference": "round",
+    "mica": true,
+    "micaAlt": false,
+    "acrylic": false,
+    "blur": false,
+    "transparent": false,
+    "customTitleBar": true,
+    "draggable": true,
+    "dragRegions": ["[data-avila-drag]", ".titlebar"],
+    "noDragRegions": ["button", "input", "textarea", "select", "a", "[data-avila-no-drag]"]
+  },
+  "security": {
+    "defaultPolicy": "deny",
+    "allowRemoteContent": false,
+    "allowedOrigins": ["avila://local"],
+    "devtools": false,
+    "sanitizeLogs": true,
+    "maxPayloadBytes": 1048576,
+    "bridgeTimeoutMs": 5000,
+    "tokenSecurity": "session-capability"
+  },
+  "permissions": {
+    "app.info": true,
+    "system.ping": true,
+    "window.setTitle": true,
+    "window.setSize": true,
+    "window.center": true,
+    "window.setDraggable": true,
+    "window.setMica": true,
+    "window.setRoundedCorners": true,
+    "browser.canGoBack": false,
+    "browser.canGoForward": false,
+    "browser.navigate": false
+  },
+  "performance": {
+    "startupBoost": true,
+    "preloadBridge": true,
+    "warmWorkerPool": true,
+    "workerPoolMin": 1,
+    "workerPoolMax": 4,
+    "shrinkWorkersAfterStartup": true,
+    "shrinkDelayMs": 8000,
+    "cacheStaticAssets": true,
+    "lazyLoadNativeModules": true
+  },
+  "build": {
+    "target": "win-x64",
+    "singleFile": true,
+    "selfContained": true,
+    "nativeAot": false,
+    "trim": true,
+    "readyToRun": true,
+    "outputName": "CustomWindow"
+  }
+}

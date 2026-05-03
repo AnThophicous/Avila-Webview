@@ -1,0 +1,40 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: #1f2026;
+  color: #eeeeF4;
+}
+
+body {
+  margin: 0;
+}
+
+header {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-bottom: 1px solid #333540;
+  background: #25262d;
+}
+
+main {
+  padding: 42px;
+}
+
+button {
+  border: 0;
+  border-radius: 6px;
+  margin-right: 8px;
+  padding: 8px 12px;
+  color: #fff;
+  background: #343642;
+}
+
+pre {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid #333540;
+  border-radius: 8px;
+  background: #18191d;
+}

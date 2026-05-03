@@ -1,0 +1,70 @@
+{
+  "app": {
+    "id": "com.example.hello",
+    "name": "Hello World",
+    "version": "1.0.0",
+    "entry": "src/index.html",
+    "icon": ""
+  },
+  "window": {
+    "width": 900,
+    "height": 580,
+    "minWidth": 640,
+    "minHeight": 420,
+    "center": true,
+    "resizable": true,
+    "borderless": false,
+    "roundedCorners": true,
+    "cornerPreference": "round",
+    "mica": true,
+    "micaAlt": false,
+    "acrylic": false,
+    "blur": false,
+    "transparent": false,
+    "customTitleBar": true,
+    "draggable": true,
+    "dragRegions": ["[data-avila-drag]"],
+    "noDragRegions": ["button", "input", "textarea", "select", "a", "[data-avila-no-drag]"]
+  },
+  "security": {
+    "defaultPolicy": "deny",
+    "allowRemoteContent": false,
+    "allowedOrigins": ["avila://local"],
+    "devtools": true,
+    "sanitizeLogs": true,
+    "maxPayloadBytes": 1048576,
+    "bridgeTimeoutMs": 5000,
+    "tokenSecurity": "session-capability"
+  },
+  "permissions": {
+    "app.info": true,
+    "system.ping": true,
+    "window.setTitle": true,
+    "window.setMica": true,
+    "window.setRoundedCorners": true,
+    "browser.canGoBack": false,
+    "browser.canGoForward": false,
+    "browser.navigate": false,
+    "clipboard.writeText": true
+  },
+  "performance": {
+    "startupBoost": true,
+    "preloadBridge": true,
+    "warmWorkerPool": true,
+    "workerPoolMin": 1,
+    "workerPoolMax": 4,
+    "shrinkWorkersAfterStartup": true,
+    "shrinkDelayMs": 8000,
+    "cacheStaticAssets": true,
+    "lazyLoadNativeModules": true
+  },
+  "build": {
+    "target": "win-x64",
+    "singleFile": true,
+    "selfContained": true,
+    "nativeAot": false,
+    "trim": true,
+    "readyToRun": true,
+    "outputName": "HelloWorld"
+  }
+}

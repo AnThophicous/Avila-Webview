@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Starter App</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script defer src="./main.js"></script>
+  </head>
+  <body>
+    <header class="titlebar" data-avila-drag>
+      <div class="brand">
+        <span class="mark"></span>
+        <span>Starter App</span>
+      </div>
+      <button id="ping" class="primary" data-avila-no-drag>Ping</button>
+    </header>
+
+    <main class="layout">
+      <nav class="sidebar">
+        <span class="nav-item active">Overview</span>
+        <span class="nav-item">Bridge</span>
+        <span class="nav-item">Window</span>
+      </nav>
+
+      <section class="content">
+        <p class="eyebrow">Starter app</p>
+        <h1>Secure native runtime for web apps.</h1>
+        <p class="muted">This starter uses the secure bridge, native window APIs, and a production package path.</p>
+        <pre id="output">Loading...</pre>
+      </section>
+    </main>
+  </body>
+</html>

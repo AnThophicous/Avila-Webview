@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>Avila</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3405.78" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\Avila.SDK\avila.js" Link="avila.js" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Avila.Core\Avila.Core.csproj" />
+    <ProjectReference Include="..\Avila.Bridge\Avila.Bridge.csproj" />
+    <ProjectReference Include="..\Avila.Diagnostics\Avila.Diagnostics.csproj" />
+    <ProjectReference Include="..\Avila.Security\Avila.Security.csproj" />
+    <ProjectReference Include="..\Avila.Windowing\Avila.Windowing.csproj" />
+    <ProjectReference Include="..\Avila.Workers\Avila.Workers.csproj" />
+  </ItemGroup>
+
+  <Target Name="RemoveUnusedWebView2WpfReference" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Reference.Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+    </ItemGroup>
+  </Target>
+</Project>

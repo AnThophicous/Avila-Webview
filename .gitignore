@@ -1,0 +1,11 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.suo
+dist/
+build/
+**/.avila-webview/
+**/webview2-data/
+**/logs/

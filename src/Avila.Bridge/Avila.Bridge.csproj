@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Avila.Diagnostics\Avila.Diagnostics.csproj" />
+    <ProjectReference Include="..\Avila.Security\Avila.Security.csproj" />
+    <ProjectReference Include="..\Avila.Workers\Avila.Workers.csproj" />
+  </ItemGroup>
+</Project>

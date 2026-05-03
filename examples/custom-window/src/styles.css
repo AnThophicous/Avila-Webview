@@ -1,0 +1,42 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: #1f2026;
+  color: #eeeeF4;
+}
+
+body {
+  margin: 0;
+}
+
+.titlebar {
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  background: #25262d;
+  border-bottom: 1px solid #333540;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+button {
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 12px;
+  color: #fff;
+  background: #343642;
+  cursor: pointer;
+}
+
+main {
+  padding: 42px;
+}
+
+p {
+  color: #a7a9b4;
+}
