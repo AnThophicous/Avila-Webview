@@ -1,6 +1,6 @@
 # Architecture
 
-Avila is split into small runtime layers so the bridge, permissions, windowing, packaging, diagnostics, and native core can evolve without becoming an Electron-style monolith.
+Avila is a Windows desktop app engine for HTML, CSS, and JavaScript apps. It is split into small runtime layers so the bridge, permissions, windowing, packaging, diagnostics, and native core can evolve without becoming an Electron-style monolith.
 
 ## Layers
 

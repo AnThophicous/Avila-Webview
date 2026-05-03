@@ -1,6 +1,8 @@
-# Avila
+# Avila WebView2 Desktop App Engine
 
-Avila is a Windows-first desktop engine for HTML, CSS, and JavaScript apps. It combines .NET 8, WebView2, a secure JS-native bridge, native window customization, a bounded worker pool, and an EXE packaging pipeline.
+Avila is a Windows desktop app engine for HTML, CSS, and JavaScript apps. It combines .NET 8, WebView2, a secure JS-native bridge, native window customization, a bounded worker pool, and an EXE packaging pipeline.
+
+If you are searching for a WebView2 desktop app engine, an Electron alternative for Windows, or a .NET runtime for shipping HTML/CSS/JavaScript apps as secure EXEs, this repository is the platform.
 
 ## Commands
 
@@ -24,6 +26,8 @@ Generated projects start without Avila branding in the window icon or process na
 For production apps, `--secure` is the recommended packaging mode. It keeps the frontend sealed inside `app.avila.bundle`, verifies the manifest signature on boot, and stops startup if the bundle changes.
 
 For a detailed release and publish flow, see `docs/publishing.md`.
+
+For the broader platform overview and search-friendly summary, see `docs/overview.md`.
 
 ## Quick Start
 
@@ -49,5 +53,13 @@ HTML/CSS/JS app
   -> Avila.exe host / Avila.Core / Avila.Windowing / Avila.Workers
   -> WebView2 renderer, Win32, DWM, optional C++ core
 ```
+
+## Search-Friendly Summary
+
+- Windows desktop app engine for HTML, CSS, and JavaScript
+- WebView2 host with AppView and BrowserApp modes
+- Electron alternative for apps that want a smaller, stricter runtime
+- EXE packaging pipeline with secure bundle sealing and tamper detection
+- .NET 8 CLI, runtime, bridge, security, windowing, and tooling layers
 
 See `docs/architecture.md`, `docs/security.md`, `docs/avila-json.md`, `docs/api-reference.md`, `docs/runtime-roadmap.md`, `docs/build.md`, `docs/clean-dist.md`, and `docs/versioning.md`.
