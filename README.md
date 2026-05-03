@@ -29,6 +29,8 @@ For a detailed release and publish flow, see `docs/publishing.md`.
 
 For the broader platform overview and search-friendly summary, see `docs/overview.md`.
 
+For the deep technical guide, start with `PDocs/README.md`.
+
 ## Quick Start
 
 ```powershell
