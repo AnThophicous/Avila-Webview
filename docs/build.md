@@ -5,6 +5,8 @@ The packaging pipeline is intentionally simple and auditable in the MVP.
 ## Commands
 
 ```powershell
+avila upcheck
+avila upgrade --scope user
 avila check --project .\my-app.avw
 avila build --project .\my-app.avw
 avila package --project .\my-app.avw
@@ -12,6 +14,7 @@ avila package --project .\my-app.avw --secure
 avila verify .\dist\app.avila.bundle
 avila audit --project .\my-app.avw
 avila audit --project .\my-app.avw --production
+avila benchmark --project .\my-app.avw --electron C:\Tools\Electron\electron.exe
 avila publish
 ```
 
@@ -28,7 +31,8 @@ avila publish
 9. Validate that no dev-only or secret-like files are present.
 10. Write `<OutputName>.avwmeta.json`, `build-report.txt`, and `Versionate.txt`.
 11. Mirror the final distributable into `buildclear/dist` when the repository root is available, and copy the release marker next to it.
-12. Use `avila publish` for the compiled engine bundle that users can download directly.
+12. Emit a startup marker during dev so `avila benchmark` can measure first paint and compare it to Electron when a local Electron path is supplied.
+13. Use `avila publish` for the compiled engine bundle that users can download directly.
 
 ## Output
 
@@ -84,8 +88,18 @@ dotnet run --project src/Avila.CLI -- inspect package --project .\my-app.avw
 `inspect apis` lists registered bridge commands with current allow/deny status. `inspect permissions` explains manifest permission state and validation issues. `inspect package` scans `dist` for package size and blocked files.
 `check` is the fast validation pass. `audit` is the strict security pass. `audit --production` expects a secure bundle in `dist` and treats missing bundle verification as a production failure. `publish` is the compiled engine bundle flow.
 
+`avila dev` now behaves like a real developer loop:
+
+- hot reload reacts to frontend file changes and the backend runtime can restart or reload based on the project configuration
+- dev errors are redirected to the inspector console screen instead of failing silently in the terminal
+- console errors and frontend runtime errors are captured in a dedicated debug surface
+- `sandbox`, `contextIsolation`, `AreHostObjectsAllowed = false`, and the permission allowlist keep the runtime tight by default
+- `window` chrome options such as `roundedCorners`, `borderRadiusPx`, `blur`, and `blurAmount` come from the manifest and are clamped to safe values
+
+The web frontend should remain the only thing changing rapidly; the engine itself stays controlled and predictable.
+
 The `package` command also keeps `buildclear/dist` synced with the latest release when Avila is running from the source repository. That folder is the clean latest-release snapshot for launcher and smoke-test use.
-`Versionate.txt` is the single release marker. For the current official patch release, the file contains `26.0.1 Startup | Release`.
+`Versionate.txt` is the single release marker. For the current official patch release, the file contains `26.0.2 Release`.
 
 ## Roadmap
 

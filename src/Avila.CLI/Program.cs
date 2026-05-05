@@ -46,6 +46,13 @@ try
         case "benchmark":
             await BenchmarkAsync(options);
             break;
+        case "upcheck":
+            await UpcheckAsync(options);
+            break;
+        case "upgrade":
+        case "install":
+            await UpgradeAsync(options);
+            break;
         case "version":
         case "--version":
             PrintVersion();
@@ -263,14 +270,375 @@ async Task BenchmarkAsync(CliOptions cliOptions)
     var package = await packageService.PackageAsync(cliOptions.ProjectPath).ConfigureAwait(false);
     packageTimer.Stop();
 
-    var distBytes = Directory.EnumerateFiles(package.DistDirectory, "*", SearchOption.AllDirectories)
-        .Sum(file => new FileInfo(file).Length);
+    var avilaStartup = await MeasureAvilaStartupAsync(package.ExePath, Path.GetDirectoryName(package.ExePath) ?? package.DistDirectory).ConfigureAwait(false);
+    var distBytes = GetDirectorySizeBytes(package.DistDirectory);
 
     Console.WriteLine($"Project: {build.Project.Manifest.App.Name}");
     Console.WriteLine($"Build time: {buildTimer.Elapsed.TotalMilliseconds:N0} ms");
     Console.WriteLine($"Package time: {packageTimer.Elapsed.TotalMilliseconds:N0} ms");
+    Console.WriteLine($"Avila startup: {avilaStartup:N0} ms");
     Console.WriteLine($"Package size: {distBytes / 1024d / 1024d:N2} MB");
     Console.WriteLine(ReportFormatter.Format(package.Report));
+
+    if (!string.IsNullOrWhiteSpace(cliOptions.ElectronPath))
+    {
+        var electron = await BenchmarkElectronAsync(cliOptions.ElectronPath, cliOptions.ProjectPath).ConfigureAwait(false);
+        Console.WriteLine();
+        Console.WriteLine("Electron comparison");
+        Console.WriteLine($"Electron startup: {electron.StartupMs:N0} ms");
+        Console.WriteLine($"Electron package size: {electron.PackageSizeMb:N2} MB");
+        Console.WriteLine($"Electron app path: {electron.AppPath}");
+    }
+}
+
+async Task UpcheckAsync(CliOptions cliOptions)
+{
+    var updateService = new UpdateService();
+    var currentMarker = Versionate.ResolveText(AppContext.BaseDirectory, Environment.CurrentDirectory);
+    var result = await updateService.UpcheckAsync(currentMarker, AppContext.BaseDirectory).ConfigureAwait(false);
+
+    Console.WriteLine("Checking Avila version...");
+    Console.WriteLine($"Local version: {result.CurrentVersion}");
+    Console.WriteLine($"Latest version: {result.LatestVersion}");
+
+    if (result.VersionMismatch)
+    {
+        Console.WriteLine("Version marker mismatch detected. Reinstall Avila to repair this installation.");
+        Console.WriteLine($"Marker source: {result.CurrentMarkerSource ?? "unknown"}");
+        Environment.ExitCode = 2;
+        return;
+    }
+
+    if (result.UpdateAvailable)
+    {
+        Console.WriteLine("A new Avila release is available.");
+        Console.WriteLine($"Release: {result.LatestReleaseName}");
+        Console.WriteLine($"URL: {result.LatestReleaseUrl}");
+
+        if (cliOptions.OpenRelease && PromptYesNo("Open the release page now?"))
+        {
+            OpenInBrowser(result.LatestReleaseUrl);
+        }
+
+        return;
+    }
+
+    Console.WriteLine("Avila is already up to date.");
+}
+
+async Task UpgradeAsync(CliOptions cliOptions)
+{
+    var updateService = new UpdateService();
+    var progress = new Progress<InstallProgress>(report => WriteProgressLine(report));
+    Console.WriteLine("Downloading latest Avila release...");
+    var result = await updateService.InstallLatestAsync(
+        cliOptions.InstallDirectory,
+        cliOptions.InstallScope,
+        progress,
+        cancellationToken: default).ConfigureAwait(false);
+
+    Console.WriteLine();
+    Console.WriteLine("Installing Avila...");
+    Console.WriteLine("Adding Avila to PATH...");
+    Console.WriteLine("Installation completed successfully.");
+    Console.WriteLine($"Installed release: {result.ReleaseName}");
+    Console.WriteLine($"Version: {result.ReleaseVersion}");
+    Console.WriteLine($"Install root: {result.InstallRoot}");
+    Console.WriteLine($"Executable: {result.ExecutablePath}");
+}
+
+async Task<double> MeasureAvilaStartupAsync(string executablePath, string workingDirectory)
+{
+    var markerPath = Path.Combine(Path.GetTempPath(), $"avila-startup-{Guid.NewGuid():N}.txt");
+    TryDelete(markerPath);
+
+    using var process = StartBenchmarkProcess(
+        executablePath,
+        workingDirectory,
+        markerPath,
+        extraArguments: []);
+
+    var stopwatch = Stopwatch.StartNew();
+    var stdoutTask = process.StandardOutput.ReadToEndAsync();
+    var stderrTask = process.StandardError.ReadToEndAsync();
+    await WaitForMarkerAsync(process, markerPath, TimeSpan.FromSeconds(60)).ConfigureAwait(false);
+    stopwatch.Stop();
+
+    TryTerminate(process);
+    await Task.WhenAll(stdoutTask, stderrTask).ConfigureAwait(false);
+    TryDelete(markerPath);
+
+    return stopwatch.Elapsed.TotalMilliseconds;
+}
+
+async Task<(double StartupMs, double PackageSizeMb, string AppPath)> BenchmarkElectronAsync(string electronPath, string? avilaProjectPath)
+{
+    var resolvedElectron = ResolveElectronExecutablePath(electronPath);
+    var electronRoot = Directory.Exists(electronPath)
+        ? Path.GetFullPath(electronPath)
+        : Path.GetDirectoryName(resolvedElectron) ?? Path.GetDirectoryName(Path.GetFullPath(resolvedElectron)) ?? Environment.CurrentDirectory;
+
+    var tempRoot = Path.Combine(Path.GetTempPath(), $"avila-electron-benchmark-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(tempRoot);
+
+    var markerPath = Path.Combine(tempRoot, "electron-startup.txt");
+    await File.WriteAllTextAsync(Path.Combine(tempRoot, "package.json"), """
+{
+  "name": "avila-electron-benchmark",
+  "version": "1.0.0",
+  "main": "main.js"
+}
+""").ConfigureAwait(false);
+
+    await File.WriteAllTextAsync(Path.Combine(tempRoot, "index.html"), """
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Electron benchmark</title>
+  </head>
+  <body>
+    <main>Electron benchmark</main>
+  </body>
+</html>
+""").ConfigureAwait(false);
+
+    await File.WriteAllTextAsync(Path.Combine(tempRoot, "main.js"), $$"""
+const { app, BrowserWindow } = require("electron");
+const fs = require("fs");
+
+function resolveMarker() {
+  const args = process.argv.slice(2);
+  const index = args.indexOf("--benchmark-file");
+  if (index >= 0 && index + 1 < args.length) {
+    return args[index + 1];
+  }
+
+  return null;
+}
+
+function createWindow() {
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    show: false
+  });
+
+  win.webContents.once("did-finish-load", () => {
+    const marker = resolveMarker();
+    if (marker) {
+      fs.writeFileSync(marker, new Date().toISOString() + "\n");
+    }
+
+    setTimeout(() => app.quit(), 50);
+  });
+
+  win.loadFile("index.html");
+}
+
+app.whenReady().then(createWindow);
+app.on("window-all-closed", () => app.quit());
+""").ConfigureAwait(false);
+
+    try
+    {
+        using var process = StartBenchmarkProcess(
+            resolvedElectron,
+            tempRoot,
+            markerPath,
+            extraArguments: ["."]);
+
+        var stopwatch = Stopwatch.StartNew();
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        await WaitForMarkerAsync(process, markerPath, TimeSpan.FromSeconds(60)).ConfigureAwait(false);
+        stopwatch.Stop();
+
+        TryTerminate(process);
+        await Task.WhenAll(stdoutTask, stderrTask).ConfigureAwait(false);
+
+        var packageSize = (GetDirectorySizeBytes(tempRoot) + GetDirectorySizeBytes(electronRoot)) / 1024d / 1024d;
+        return (stopwatch.Elapsed.TotalMilliseconds, packageSize, tempRoot);
+    }
+    catch
+    {
+        TryDeleteDirectory(tempRoot);
+        throw;
+    }
+}
+
+Process StartBenchmarkProcess(string executablePath, string workingDirectory, string markerPath, IReadOnlyList<string> extraArguments)
+{
+    var startInfo = new ProcessStartInfo
+    {
+        FileName = executablePath,
+        WorkingDirectory = workingDirectory,
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true
+    };
+
+    startInfo.ArgumentList.Add("--mode");
+    startInfo.ArgumentList.Add("production");
+    startInfo.ArgumentList.Add("--benchmark-file");
+    startInfo.ArgumentList.Add(markerPath);
+
+    foreach (var argument in extraArguments)
+    {
+        startInfo.ArgumentList.Add(argument);
+    }
+
+    var process = Process.Start(startInfo);
+    if (process is null)
+    {
+        throw new InvalidOperationException($"Could not start benchmark process: {executablePath}");
+    }
+
+    return process;
+}
+
+async Task WaitForMarkerAsync(Process process, string markerPath, TimeSpan timeout)
+{
+    var deadline = DateTimeOffset.UtcNow + timeout;
+    while (DateTimeOffset.UtcNow < deadline)
+    {
+        if (File.Exists(markerPath))
+        {
+            return;
+        }
+
+        if (process.HasExited)
+        {
+            throw new InvalidOperationException($"Benchmark process exited before writing the marker file: {markerPath}");
+        }
+
+        await Task.Delay(50).ConfigureAwait(false);
+    }
+
+    throw new TimeoutException($"Benchmark marker was not written in time: {markerPath}");
+}
+
+void TryTerminate(Process process)
+{
+    try
+    {
+        if (!process.HasExited)
+        {
+            process.Kill(entireProcessTree: true);
+        }
+
+        process.WaitForExit(5000);
+    }
+    catch
+    {
+    }
+}
+
+static void TryDelete(string path)
+{
+    try
+    {
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+    }
+    catch
+    {
+    }
+}
+
+static void TryDeleteDirectory(string path)
+{
+    try
+    {
+        if (Directory.Exists(path))
+        {
+            Directory.Delete(path, recursive: true);
+        }
+    }
+    catch
+    {
+    }
+}
+
+static long GetDirectorySizeBytes(string root)
+{
+    if (!Directory.Exists(root))
+    {
+        return 0;
+    }
+
+    long total = 0;
+    foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+    {
+        try
+        {
+            total += new FileInfo(file).Length;
+        }
+        catch
+        {
+        }
+    }
+
+    return total;
+}
+
+static string ResolveElectronExecutablePath(string electronPath)
+{
+    if (File.Exists(electronPath))
+    {
+        return Path.GetFullPath(electronPath);
+    }
+
+    if (Directory.Exists(electronPath))
+    {
+        foreach (var candidate in new[]
+        {
+            Path.Combine(electronPath, "electron.exe"),
+            Path.Combine(electronPath, "electron.cmd"),
+            Path.Combine(electronPath, "electron")
+        })
+        {
+            if (File.Exists(candidate))
+            {
+                return Path.GetFullPath(candidate);
+            }
+        }
+    }
+
+    throw new FileNotFoundException("Could not locate an Electron executable.", electronPath);
+}
+
+static bool PromptYesNo(string message)
+{
+    Console.Write($"{message} [y/N] ");
+    var response = Console.ReadLine()?.Trim().ToLowerInvariant();
+    return response is "y" or "yes";
+}
+
+static void OpenInBrowser(string url)
+{
+    var startInfo = new ProcessStartInfo
+    {
+        FileName = url,
+        UseShellExecute = true
+    };
+
+    Process.Start(startInfo);
+}
+
+static void WriteProgressLine(InstallProgress progress)
+{
+    const int width = 24;
+    var filled = Math.Clamp(progress.Percent * width / 100, 0, width);
+    var bar = new string('#', filled) + new string('-', width - filled);
+    Console.Write($"\r[{bar}] {progress.Percent,3}% {progress.Message.PadRight(44)}");
+    if (progress.Percent >= 100)
+    {
+        Console.WriteLine();
+    }
 }
 
 async Task DoctorAsync(CliOptions cliOptions)
@@ -312,7 +680,12 @@ async Task RunRuntimeAsync(CliOptions cliOptions, string mode)
     if (ProjectLocator.TryFindRepositoryRoot(out var repoRoot))
     {
         var runtimeProject = Path.Combine(repoRoot, "src", "Avila.Runtime", "Avila.Runtime.csproj");
-        var arguments = $"run --project \"{runtimeProject}\" -- --project \"{projectPath}\" --mode {mode} {modeArgs}";
+        var watchPrefix = mode == "dev" ? "watch run" : "run";
+        var arguments = $"{watchPrefix} --project \"{runtimeProject}\" -- --project \"{projectPath}\" --mode {mode} {modeArgs}";
+        if (mode == "dev")
+        {
+            arguments = $"watch --non-interactive run --project \"{runtimeProject}\" -- --project \"{projectPath}\" --mode {mode} {modeArgs}";
+        }
         result = await runner.RunAsync("dotnet", arguments, repoRoot);
     }
     else
@@ -346,8 +719,10 @@ Usage:
   avila verify <bundle-path|bundle-directory>
   avila check [--project <path>] [--security]
   avila audit [--project <path>] [--production]
+  avila upcheck
+  avila upgrade [--scope user|machine] [--directory <path>]
   avila publish [--sign] [--output <path>] [--runtime <rid>]
-  avila benchmark [--project <path>]
+  avila benchmark [--project <path>] [--electron <path>]
   avila version
   avila doctor [--project <path>]
   avila inspect apis [--project <path>]
@@ -373,6 +748,10 @@ internal sealed class CliOptions
 
     public string? RuntimeIdentifier { get; init; }
 
+    public string? ElectronPath { get; init; }
+
+    public string? InstallDirectory { get; init; }
+
     public bool DevTools { get; init; }
 
     public bool Security { get; init; }
@@ -382,6 +761,10 @@ internal sealed class CliOptions
     public bool Production { get; init; }
 
     public bool Sign { get; init; }
+
+    public bool OpenRelease { get; init; }
+
+    public InstallScope InstallScope { get; init; } = InstallScope.User;
 
     public bool Verbose { get; init; }
 
@@ -394,11 +777,15 @@ internal sealed class CliOptions
         string? url = null;
         string? outputPath = null;
         string? runtimeIdentifier = null;
+        string? electronPath = null;
+        string? installDirectory = null;
         var devTools = false;
         var security = false;
         var secureBundle = false;
         var production = false;
         var sign = false;
+        var openRelease = true;
+        var installScope = InstallScope.User;
         var verbose = false;
         var positionals = new List<string>();
 
@@ -422,6 +809,17 @@ internal sealed class CliOptions
                 case "--runtime" when index + 1 < args.Length:
                     runtimeIdentifier = args[++index];
                     break;
+                case "--electron" when index + 1 < args.Length:
+                    electronPath = args[++index];
+                    break;
+                case "--directory" when index + 1 < args.Length:
+                    installDirectory = args[++index];
+                    break;
+                case "--scope" when index + 1 < args.Length:
+                    installScope = args[++index].Equals("machine", StringComparison.OrdinalIgnoreCase)
+                        ? InstallScope.Machine
+                        : InstallScope.User;
+                    break;
                 case "--secure":
                     secureBundle = true;
                     break;
@@ -436,6 +834,9 @@ internal sealed class CliOptions
                     break;
                 case "--sign":
                     sign = true;
+                    break;
+                case "--no-open":
+                    openRelease = false;
                     break;
                 case "--verbose":
                     verbose = true;
@@ -453,11 +854,15 @@ internal sealed class CliOptions
             Url = url,
             OutputPath = outputPath,
             RuntimeIdentifier = runtimeIdentifier,
+            ElectronPath = electronPath,
+            InstallDirectory = installDirectory,
             DevTools = devTools,
             Security = security,
             SecureBundle = secureBundle,
             Production = production,
             Sign = sign,
+            OpenRelease = openRelease,
+            InstallScope = installScope,
             Verbose = verbose,
             Positionals = positionals
         };

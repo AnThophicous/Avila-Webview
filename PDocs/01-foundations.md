@@ -36,7 +36,7 @@ Avila is not:
 
 - a general browser
 - a loose Electron clone
-- a Node.js sandbox with unlimited power
+- a Node.js sandbox with allowlists and runtime control
 - a frontend framework
 - a static site host
 

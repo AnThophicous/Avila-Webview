@@ -10,6 +10,8 @@ public sealed class RuntimeOptions
 
     public bool? DevToolsOverride { get; init; }
 
+    public string? BenchmarkFilePath { get; init; }
+
     public IReadOnlyList<string> Arguments { get; init; } = [];
 
     public static RuntimeOptions Parse(string[] args)
@@ -17,6 +19,7 @@ public sealed class RuntimeOptions
         var projectPath = "";
         var mode = "production";
         bool? devTools = null;
+        string? benchmarkFilePath = null;
 
         for (var index = 0; index < args.Length; index++)
         {
@@ -35,6 +38,9 @@ public sealed class RuntimeOptions
                 case "--no-devtools":
                     devTools = false;
                     break;
+                case "--benchmark-file" when index + 1 < args.Length:
+                    benchmarkFilePath = args[++index];
+                    break;
             }
         }
 
@@ -43,6 +49,7 @@ public sealed class RuntimeOptions
             ProjectPath = string.IsNullOrWhiteSpace(projectPath) ? ResolveDefaultProjectPath() : projectPath,
             Mode = mode.Equals("dev", StringComparison.OrdinalIgnoreCase) ? "dev" : "production",
             DevToolsOverride = devTools,
+            BenchmarkFilePath = benchmarkFilePath,
             Arguments = args.ToArray()
         };
     }

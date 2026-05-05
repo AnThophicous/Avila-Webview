@@ -31,6 +31,8 @@ This guide covers:
 - NodeHost isolation
 - secure bundle packaging and tamper detection
 - day-to-day development, build, package, verify, and release usage
+- upcheck/upgrade release checking and installer flow
+- inspector console and dev console debugger behavior
 
 ## Audience
 

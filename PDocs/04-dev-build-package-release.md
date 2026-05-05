@@ -7,6 +7,8 @@ The recommended loop is simple:
 ```powershell
 avila create app my-app
 cd my-app
+avila upcheck
+avila upgrade
 avila dev
 avila build
 avila package
@@ -37,6 +39,8 @@ The main commands are:
 - `avila inspect`
 - `avila benchmark`
 - `avila version`
+- `avila upcheck`
+- `avila upgrade`
 
 ## Scaffolding
 
@@ -60,8 +64,10 @@ Dev mode should optimize for iteration:
 - WebView2 opens the local app shell
 - the bridge is injected for local apps
 - hot reload should react to file changes
+- runtime errors and console errors should surface in the inspector console screen
 - the app should not need a full rebuild for every edit
 - output folders should be ignored to avoid reload loops
+- sandbox and context isolation should stay enabled by default
 
 The goal is to make the edit/save/test loop fast while keeping the production rules intact.
 
@@ -207,6 +213,7 @@ Common issues to watch:
 - missing secure bundle sidecars
 - source maps accidentally shipped
 - output names that do not match the package identity
+- window chrome settings that exceed safe blur or radius limits
 
 ## What A Strong Production Release Should Feel Like
 
@@ -218,5 +225,6 @@ A good Avila release should feel like this:
 - the bridge is strict but usable
 - the build output is clean
 - the package is reproducible
+- the dev console tells the truth when the app crashes immediately
 - tampering is detected at startup
 - the developer knows exactly what is allowed and why

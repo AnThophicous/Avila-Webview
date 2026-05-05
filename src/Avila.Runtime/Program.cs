@@ -19,7 +19,21 @@ internal static class Program
             if (!validation.IsValid)
             {
                 var message = string.Join(Environment.NewLine, validation.Errors.Select(error => $"{error.Code}: {error.Message}"));
-                MessageBox.Show(message, "Invalid avila.json", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (options.Mode.Equals("dev", StringComparison.OrdinalIgnoreCase))
+                {
+                    using var form = new DevErrorForm(DevErrorSnapshot.FromConsoleMessage(
+                        "Avila validation error",
+                        "Manifest",
+                        message,
+                        project.RootPath,
+                        0,
+                        0));
+                    Application.Run(form);
+                }
+                else
+                {
+                    MessageBox.Show(message, "Invalid avila.json", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
                 return 2;
             }
 
@@ -56,7 +70,21 @@ internal static class Program
             if (policyErrors.Length > 0)
             {
                 var message = string.Join(Environment.NewLine, policyErrors.Select(issue => $"{issue.Code}: {issue.Message}"));
-                MessageBox.Show(message, "Avila policy resolver", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (options.Mode.Equals("dev", StringComparison.OrdinalIgnoreCase))
+                {
+                    using var form = new DevErrorForm(DevErrorSnapshot.FromConsoleMessage(
+                        "Avila policy resolver",
+                        "Policy",
+                        message,
+                        project.RootPath,
+                        0,
+                        0));
+                    Application.Run(form);
+                }
+                else
+                {
+                    MessageBox.Show(message, "Avila policy resolver", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
                 return 3;
             }
 
@@ -75,7 +103,15 @@ internal static class Program
         }
         catch (Exception exception)
         {
-            MessageBox.Show(exception.Message, "Avila", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (options.Mode.Equals("dev", StringComparison.OrdinalIgnoreCase))
+            {
+                using var form = new DevErrorForm(DevErrorSnapshot.FromException("Avila startup failure", exception));
+                Application.Run(form);
+            }
+            else
+            {
+                MessageBox.Show(exception.Message, "Avila", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
             return 1;
         }
     }

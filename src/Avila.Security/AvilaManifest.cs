@@ -101,6 +101,9 @@ public sealed class WindowManifest
     [JsonPropertyName("roundedCorners")]
     public bool RoundedCorners { get; set; } = true;
 
+    [JsonPropertyName("borderRadiusPx")]
+    public int BorderRadiusPx { get; set; } = 12;
+
     [JsonPropertyName("cornerPreference")]
     public string CornerPreference { get; set; } = "round";
 
@@ -115,6 +118,9 @@ public sealed class WindowManifest
 
     [JsonPropertyName("blur")]
     public bool Blur { get; set; }
+
+    [JsonPropertyName("blurAmount")]
+    public double BlurAmount { get; set; }
 
     [JsonPropertyName("transparent")]
     public bool Transparent { get; set; }
@@ -157,6 +163,12 @@ public sealed class SecurityManifest
 
     [JsonPropertyName("tokenSecurity")]
     public string TokenSecurity { get; set; } = "session-capability";
+
+    [JsonPropertyName("sandbox")]
+    public bool Sandbox { get; set; } = true;
+
+    [JsonPropertyName("contextIsolation")]
+    public bool ContextIsolation { get; set; } = true;
 }
 
 public sealed class FileSystemManifest
@@ -249,7 +261,7 @@ public sealed class PerformanceManifest
     public bool PreloadBridge { get; set; } = true;
 
     [JsonPropertyName("warmWorkerPool")]
-    public bool WarmWorkerPool { get; set; } = true;
+    public bool WarmWorkerPool { get; set; }
 
     [JsonPropertyName("workerPoolMin")]
     public int WorkerPoolMin { get; set; } = 1;
@@ -268,6 +280,21 @@ public sealed class PerformanceManifest
 
     [JsonPropertyName("lazyLoadNativeModules")]
     public bool LazyLoadNativeModules { get; set; } = true;
+
+    [JsonPropertyName("browserFlags")]
+    public string[] BrowserFlags { get; set; } =
+    [
+        "--disable-background-networking",
+        "--disable-component-update",
+        "--disable-default-apps",
+        "--disable-extensions",
+        "--disable-sync",
+        "--disable-renderer-backgrounding",
+        "--disable-background-timer-throttling",
+        "--disable-domain-reliability",
+        "--metrics-recording-only",
+        "--no-first-run"
+    ];
 }
 
 public sealed class BuildManifest

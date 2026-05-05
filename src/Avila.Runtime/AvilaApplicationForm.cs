@@ -24,11 +24,13 @@ public sealed class AvilaApplicationForm : Form
     private readonly Win32WindowController _windowController;
     private readonly NativeShellGateway _nativeShell;
     private readonly bool _secureBundleEnabled;
+    private readonly string? _benchmarkFilePath;
     private SecureBundleHost? _secureBundleHost;
     private FileSystemWatcher? _devWatcher;
     private System.Threading.Timer? _devReloadTimer;
     private RemoteWebViewManager? _remoteWebViews;
     private BridgeHost? _bridge;
+    private bool _devErrorRendered;
 
     public AvilaApplicationForm(
         AvilaProject project,
@@ -49,8 +51,10 @@ public sealed class AvilaApplicationForm : Form
         _logDirectory = logDirectory;
         _windowController = new Win32WindowController(this);
         _secureBundleEnabled = !string.IsNullOrWhiteSpace(project.BundlePath);
+        _benchmarkFilePath = options.BenchmarkFilePath;
 
         Text = project.Manifest.App.Name;
+        ShowIcon = !string.IsNullOrWhiteSpace(project.Manifest.App.Icon);
         ApplyAppIcon();
         _nativeShell = new NativeShellGateway(this, PostAvilaEvent, _logger);
         KeyPreview = true;
@@ -82,7 +86,15 @@ public sealed class AvilaApplicationForm : Form
         catch (Exception exception)
         {
             _logger.Error(exception, "Runtime startup failed");
-            MessageBox.Show(_logger.Sanitize(exception.Message), "Avila", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (_options.Mode.Equals("dev", StringComparison.OrdinalIgnoreCase))
+            {
+                using var form = new DevErrorForm(DevErrorSnapshot.FromException("Startup failure", exception));
+                form.ShowDialog(this);
+            }
+            else
+            {
+                MessageBox.Show(_logger.Sanitize(exception.Message), "Avila", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
             Close();
         }
     }
@@ -113,7 +125,11 @@ public sealed class AvilaApplicationForm : Form
         var userDataPath = GetUserDataPath();
         Directory.CreateDirectory(userDataPath);
 
-        var environment = await CoreWebView2Environment.CreateAsync(null, userDataPath).ConfigureAwait(true);
+        var environmentOptions = new CoreWebView2EnvironmentOptions
+        {
+            AdditionalBrowserArguments = BuildAdditionalBrowserArguments()
+        };
+        var environment = await CoreWebView2Environment.CreateAsync(null, userDataPath, environmentOptions).ConfigureAwait(true);
         await _webView.EnsureCoreWebView2Async(environment).ConfigureAwait(true);
         if (!IsBrowserAppMode())
         {
@@ -133,7 +149,7 @@ public sealed class AvilaApplicationForm : Form
         }
         ConfigureNavigationPolicy();
 
-        if (!IsBrowserAppMode())
+        if (!IsBrowserAppMode() && (_options.Mode.Equals("dev", StringComparison.OrdinalIgnoreCase) || _project.Manifest.Performance.PreloadBridge))
         {
             var script = SdkInjector.BuildInjectedScript(_project, _options.Mode, _capabilities.SessionCapability);
             await _webView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(script).ConfigureAwait(true);
@@ -180,8 +196,20 @@ public sealed class AvilaApplicationForm : Form
         _webView.CoreWebView2.Settings.AreDevToolsEnabled = devToolsEnabled;
         _webView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = _options.Mode.Equals("dev", StringComparison.OrdinalIgnoreCase);
         _webView.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = devToolsEnabled;
+        _webView.CoreWebView2.Settings.AreHostObjectsAllowed = false;
         _webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
         _webView.CoreWebView2.Settings.IsZoomControlEnabled = false;
+    }
+
+    private string BuildAdditionalBrowserArguments()
+    {
+        var flags = _project.Manifest.Performance.BrowserFlags
+            .Where(flag => !string.IsNullOrWhiteSpace(flag))
+            .Select(flag => flag.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return string.Join(' ', flags);
     }
 
     private void ConfigureBridge()
@@ -207,6 +235,11 @@ public sealed class AvilaApplicationForm : Form
 
         _webView.CoreWebView2.WebMessageReceived += async (_, args) =>
         {
+            if (TryHandleDevMessage(args.WebMessageAsJson))
+            {
+                return;
+            }
+
             if (_bridge is null)
             {
                 return;
@@ -216,7 +249,11 @@ public sealed class AvilaApplicationForm : Form
             _webView.CoreWebView2.PostWebMessageAsJson(response);
         };
 
-        _webView.CoreWebView2.DOMContentLoaded += (_, _) => _diagnostics.MarkFirstPaint();
+        _webView.CoreWebView2.DOMContentLoaded += (_, _) =>
+        {
+            _diagnostics.MarkFirstPaint();
+            MarkBenchmarkReady();
+        };
         _webView.CoreWebView2.SourceChanged += (_, _) => PostBrowserEvent("url", new { url = _webView.CoreWebView2.Source });
         _webView.CoreWebView2.DocumentTitleChanged += (_, _) => PostBrowserEvent("title", new { title = _webView.CoreWebView2.DocumentTitle });
         _webView.CoreWebView2.NavigationCompleted += (_, args) =>
@@ -327,6 +364,7 @@ public sealed class AvilaApplicationForm : Form
         var iconPath = _project.Manifest.App.Icon;
         if (string.IsNullOrWhiteSpace(iconPath))
         {
+            ShowIcon = false;
             return;
         }
 
@@ -336,6 +374,7 @@ public sealed class AvilaApplicationForm : Form
             if (File.Exists(resolved))
             {
                 Icon = new Icon(resolved);
+                ShowIcon = true;
             }
         }
         catch (Exception exception)
@@ -374,6 +413,76 @@ public sealed class AvilaApplicationForm : Form
         }
         catch (InvalidOperationException)
         {
+        }
+    }
+
+    private bool TryHandleDevMessage(string json)
+    {
+        if (_devErrorRendered)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("type", out var typeProperty)
+                || !string.Equals(typeProperty.GetString(), "avila.dev.error", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            _devErrorRendered = true;
+            var snapshot = DevErrorSnapshot.FromFrontendJson(root);
+            RenderDevErrorPage(snapshot);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            _logger.Warning($"Could not parse dev error payload: {exception.Message}");
+            return false;
+        }
+    }
+
+    private void RenderDevErrorPage(DevErrorSnapshot snapshot)
+    {
+        if (_webView.CoreWebView2 is null || _webView.IsDisposed)
+        {
+            return;
+        }
+
+        var html = DevErrorPageBuilder.Build(snapshot);
+        try
+        {
+            _webView.CoreWebView2.NavigateToString(html);
+        }
+        catch (Exception exception)
+        {
+            _logger.Warning($"Could not render dev error page: {exception.Message}");
+        }
+    }
+
+    private void MarkBenchmarkReady()
+    {
+        if (string.IsNullOrWhiteSpace(_benchmarkFilePath))
+        {
+            return;
+        }
+
+        try
+        {
+            var directory = Path.GetDirectoryName(_benchmarkFilePath);
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            File.WriteAllText(_benchmarkFilePath, $"{DateTimeOffset.UtcNow:O}{Environment.NewLine}");
+        }
+        catch (Exception exception)
+        {
+            _logger.Warning($"Could not write benchmark marker: {exception.Message}");
         }
     }
 

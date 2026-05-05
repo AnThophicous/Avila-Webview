@@ -14,7 +14,7 @@ The manifest is split into separate areas so policies do not fight each other:
 - `app`: identity and entry
 - `mode`: `appview` or `browser-app`
 - `window`: native window behavior
-- `security`: remote content, devtools, payload limits, bridge timing
+- `security`: remote content, devtools, payload limits, bridge timing, sandbox, context isolation
 - `permissions`: command allow/deny map
 - `fs`: root-based file access control
 - `storage`: data store access
@@ -57,6 +57,15 @@ Example:
 
 This should not fail just because `allowRemoteContent` is false.
 Native fetch and WebView navigation are different policies.
+
+Window chrome belongs in the manifest too, but it should stay bounded:
+
+- `roundedCorners`
+- `borderRadiusPx`
+- `blur`
+- `blurAmount`
+
+Those fields should be treated as rendering hints with safe limits, not as arbitrary low-level escapes.
 
 ## Separate Policy Buckets
 

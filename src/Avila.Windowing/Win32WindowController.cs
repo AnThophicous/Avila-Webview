@@ -21,6 +21,8 @@ public sealed class Win32WindowController
     private readonly Form _form;
     private bool _draggable = true;
     private bool _fullscreen;
+    private int _cornerRadiusPx;
+    private bool _roundedRegionEnabled;
     private bool _resizable = true;
     private bool _hasDecorations = true;
     private Rectangle _restoreBounds;
@@ -29,6 +31,7 @@ public sealed class Win32WindowController
     public Win32WindowController(Form form)
     {
         _form = form;
+        _form.Resize += (_, _) => RefreshWindowChrome();
     }
 
     public void ApplyInitialWindowManifest(WindowManifest manifest)
@@ -36,6 +39,7 @@ public sealed class Win32WindowController
         _draggable = manifest.Draggable;
         _resizable = manifest.Resizable;
         _hasDecorations = !manifest.Borderless;
+        _cornerRadiusPx = manifest.BorderRadiusPx;
         _form.Text = _form.Text.Length == 0 ? "Avila App" : _form.Text;
         _form.StartPosition = manifest.Center ? FormStartPosition.CenterScreen : FormStartPosition.Manual;
         _form.ClientSize = new Size(manifest.Width, manifest.Height);
@@ -44,7 +48,8 @@ public sealed class Win32WindowController
         ApplyBorderStyle();
 
         ApplyDarkMode();
-        SetRoundedCorners(manifest.RoundedCorners);
+        SetRoundedCorners(manifest.RoundedCorners, manifest.BorderRadiusPx);
+        SetBlur(manifest.Blur, manifest.BlurAmount);
 
         if (manifest.Mica || manifest.MicaAlt)
         {
@@ -261,7 +266,7 @@ public sealed class Win32WindowController
 
     public Task SetRoundedCornersAsync(bool enabled, CancellationToken cancellationToken)
     {
-        return OnUiThreadAsync(() => SetRoundedCorners(enabled), cancellationToken);
+        return OnUiThreadAsync(() => SetRoundedCorners(enabled, _cornerRadiusPx), cancellationToken);
     }
 
     public Task BeginDragAsync(CancellationToken cancellationToken)
@@ -334,15 +339,86 @@ public sealed class Win32WindowController
         }
     }
 
-    private void SetRoundedCorners(bool enabled)
+    private void SetRoundedCorners(bool enabled, int radiusPx)
     {
         if (!_form.IsHandleCreated)
         {
             return;
         }
 
-        var preference = enabled ? DWMWCP_ROUND : DWMWCP_DONOTROUND;
+        _roundedRegionEnabled = enabled;
+        _cornerRadiusPx = Math.Clamp(radiusPx, 0, 30);
+
+        if (enabled && _cornerRadiusPx > 0)
+        {
+            ApplyRoundedRegion();
+        }
+        else
+        {
+            ClearRoundedRegion();
+        }
+
+        var preference = enabled && _cornerRadiusPx == 0 ? DWMWCP_ROUND : DWMWCP_DONOTROUND;
         TryDwmSetWindowAttribute(_form.Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref preference);
+    }
+
+    private void SetBlur(bool enabled, double blurAmount)
+    {
+        if (!_form.IsHandleCreated)
+        {
+            return;
+        }
+
+        var amount = Math.Max(0d, blurAmount);
+        if (!enabled && amount <= 0)
+        {
+            _form.Opacity = 1d;
+            return;
+        }
+
+        var normalized = amount <= 1d ? amount : Math.Clamp(amount / 30d, 0d, 1d);
+        var opacity = 1d - (0.18d + normalized * 0.32d);
+        _form.Opacity = Math.Clamp(opacity, 0.55d, 1d);
+    }
+
+    private void RefreshWindowChrome()
+    {
+        if (!_roundedRegionEnabled || _cornerRadiusPx <= 0 || _form.IsDisposed || !_form.IsHandleCreated)
+        {
+            return;
+        }
+
+        ApplyRoundedRegion();
+    }
+
+    private void ApplyRoundedRegion()
+    {
+        if (_fullscreen || _form.Width <= 0 || _form.Height <= 0)
+        {
+            return;
+        }
+
+        var radius = Math.Clamp(_cornerRadiusPx, 1, 30);
+        var region = CreateRoundRectRgn(0, 0, _form.Width + 1, _form.Height + 1, radius * 2, radius * 2);
+        if (region == IntPtr.Zero)
+        {
+            return;
+        }
+
+        if (!SetWindowRgn(_form.Handle, region, redraw: true).ToBool())
+        {
+            DeleteObject(region);
+        }
+    }
+
+    private void ClearRoundedRegion()
+    {
+        if (!_form.IsHandleCreated)
+        {
+            return;
+        }
+
+        SetWindowRgn(_form.Handle, IntPtr.Zero, redraw: true);
     }
 
     private void ApplyDarkMode()
@@ -452,4 +528,19 @@ public sealed class Win32WindowController
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetDesktopWindow();
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    private static extern IntPtr CreateRoundRectRgn(int leftRect, int topRect, int rightRect, int bottomRect, int widthEllipse, int heightEllipse);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool redraw);
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DeleteObject(IntPtr hObject);
+}
+
+internal static class NativeBoolExtensions
+{
+    public static bool ToBool(this int value) => value != 0;
 }

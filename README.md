@@ -9,7 +9,10 @@ If you are searching for a WebView2 desktop app engine, an Electron alternative 
 - `avila new` creates an app project.
 - `avila create app <name>` creates an app project.
 - `avila create <name> --url <site>` creates a `browser-app` project.
+- `avila upcheck` checks whether the local engine matches the latest release.
+- `avila upgrade` downloads and installs the latest compiled engine.
 - `avila dev` runs an `AppView` project in WebView2.
+- `avila dev` includes hot reload, the inspector error screen, and the dev console debugger.
 - `avila build` validates `avila.json` and writes a build report.
 - `avila package` publishes a production EXE and copies the app into `dist/app`.
 - `avila package --secure` seals the app into a signed bundle and blocks tamper-at-startup.
@@ -62,6 +65,7 @@ HTML/CSS/JS app
 - WebView2 host with AppView and BrowserApp modes
 - Electron alternative for apps that want a smaller, stricter runtime
 - EXE packaging pipeline with secure bundle sealing and tamper detection
+- sandboxed bridge and context-isolated runtime defaults
 - .NET 8 CLI, runtime, bridge, security, windowing, and tooling layers
 
 See `docs/architecture.md`, `docs/security.md`, `docs/avila-json.md`, `docs/api-reference.md`, `docs/runtime-roadmap.md`, `docs/build.md`, `docs/clean-dist.md`, and `docs/versioning.md`.
