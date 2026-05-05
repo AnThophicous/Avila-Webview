@@ -28,7 +28,6 @@
     "app.info": true,
     "system.ping": true,
     "window.setMica": true,
-    "window.setRoundedCorners": true,
     "os.exec": false
   },
   "fs": {
@@ -155,7 +154,7 @@ Recommended production defaults:
 
 ## Window
 
-The MVP supports initial size, minimum size, centering, borderless mode, rounded corners, Mica, custom draggable regions, and runtime calls such as `window.setMica` and `window.setRoundedCorners`.
+The runtime is borderless by default. It supports initial size, minimum size, centering, Mica, custom draggable regions, and runtime calls such as `window.setMica`.
 
 ## Permissions
 

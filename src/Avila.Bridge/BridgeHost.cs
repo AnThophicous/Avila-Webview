@@ -60,6 +60,7 @@ public sealed class BridgeHost
             }
 
             _context.Diagnostics.CountBridgeCall(request.Command);
+            _context.Logger.Trace($"bridge call: {request.Command}");
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(_context.Project.Manifest.Security.BridgeTimeoutMs);
             var result = await command.Handler(_context, request, timeout.Token).ConfigureAwait(false);

@@ -12,15 +12,15 @@ If you are searching for a WebView2 desktop app engine, an Electron alternative 
 - `avila upcheck` checks whether the local engine matches the latest release.
 - `avila upgrade` downloads and installs the latest compiled engine.
 - `avila dev` runs an `AppView` project in WebView2.
-- `avila dev` includes hot reload, the inspector error screen, and the dev console debugger.
+- `avila dev --debug` adds lifecycle, bridge, and perf logging on top of hot reload, the inspector error screen, and the dev console debugger.
 - `avila build` validates `avila.json` and writes a build report.
 - `avila package` publishes a production EXE and copies the app into `dist/app`.
 - `avila package --secure` seals the app into a signed bundle and blocks tamper-at-startup.
 - `avila verify` checks a secure bundle before distribution.
 - `avila check` runs the main validation pass.
 - `avila audit` runs the strict security audit.
-- `avila publish` builds the engine release bundle.
-- `avila benchmark` measures build/package time and output size.
+- `avila publish` builds the engine release bundle and accepts certificate paths for signing.
+- `avila benchmark` measures build/package time, startup time, memory, CPU idle, and output size.
 - `avila version` prints the current engine release marker from `Versionate.txt`.
 - `avila doctor` checks Windows x64, .NET SDK, WebView2 Runtime, and manifest issues.
 

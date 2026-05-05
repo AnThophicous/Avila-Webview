@@ -12,6 +12,8 @@ public sealed class RuntimeOptions
 
     public string? BenchmarkFilePath { get; init; }
 
+    public bool Debug { get; init; }
+
     public IReadOnlyList<string> Arguments { get; init; } = [];
 
     public static RuntimeOptions Parse(string[] args)
@@ -20,6 +22,7 @@ public sealed class RuntimeOptions
         var mode = "production";
         bool? devTools = null;
         string? benchmarkFilePath = null;
+        var debug = false;
 
         for (var index = 0; index < args.Length; index++)
         {
@@ -41,6 +44,9 @@ public sealed class RuntimeOptions
                 case "--benchmark-file" when index + 1 < args.Length:
                     benchmarkFilePath = args[++index];
                     break;
+                case "--debug":
+                    debug = true;
+                    break;
             }
         }
 
@@ -50,6 +56,7 @@ public sealed class RuntimeOptions
             Mode = mode.Equals("dev", StringComparison.OrdinalIgnoreCase) ? "dev" : "production",
             DevToolsOverride = devTools,
             BenchmarkFilePath = benchmarkFilePath,
+            Debug = debug,
             Arguments = args.ToArray()
         };
     }

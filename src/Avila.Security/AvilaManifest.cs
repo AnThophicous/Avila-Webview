@@ -96,19 +96,19 @@ public sealed class WindowManifest
     public bool Resizable { get; set; } = true;
 
     [JsonPropertyName("borderless")]
-    public bool Borderless { get; set; }
+    public bool Borderless { get; set; } = true;
 
     [JsonPropertyName("roundedCorners")]
-    public bool RoundedCorners { get; set; } = true;
+    public bool RoundedCorners { get; set; }
 
     [JsonPropertyName("borderRadiusPx")]
-    public int BorderRadiusPx { get; set; } = 12;
+    public int BorderRadiusPx { get; set; }
 
     [JsonPropertyName("cornerPreference")]
     public string CornerPreference { get; set; } = "round";
 
     [JsonPropertyName("mica")]
-    public bool Mica { get; set; } = true;
+    public bool Mica { get; set; }
 
     [JsonPropertyName("micaAlt")]
     public bool MicaAlt { get; set; }
@@ -263,6 +263,15 @@ public sealed class PerformanceManifest
     [JsonPropertyName("warmWorkerPool")]
     public bool WarmWorkerPool { get; set; }
 
+    [JsonPropertyName("startupWorkers")]
+    public int StartupWorkers { get; set; } = 8;
+
+    [JsonPropertyName("openWorkers")]
+    public int OpenWorkers { get; set; } = 3;
+
+    [JsonPropertyName("idleWorkers")]
+    public int IdleWorkers { get; set; } = 1;
+
     [JsonPropertyName("workerPoolMin")]
     public int WorkerPoolMin { get; set; } = 1;
 
@@ -275,11 +284,23 @@ public sealed class PerformanceManifest
     [JsonPropertyName("shrinkDelayMs")]
     public int ShrinkDelayMs { get; set; } = 8_000;
 
+    [JsonPropertyName("idleSuspendAfterMs")]
+    public int IdleSuspendAfterMs { get; set; } = 300_000;
+
+    [JsonPropertyName("cacheRenderedUi")]
+    public bool CacheRenderedUi { get; set; } = true;
+
+    [JsonPropertyName("cacheBridgeCalls")]
+    public bool CacheBridgeCalls { get; set; } = true;
+
     [JsonPropertyName("cacheStaticAssets")]
     public bool CacheStaticAssets { get; set; } = true;
 
     [JsonPropertyName("lazyLoadNativeModules")]
     public bool LazyLoadNativeModules { get; set; } = true;
+
+    [JsonPropertyName("preserveStateOnReload")]
+    public bool PreserveStateOnReload { get; set; } = true;
 
     [JsonPropertyName("browserFlags")]
     public string[] BrowserFlags { get; set; } =
@@ -292,6 +313,7 @@ public sealed class PerformanceManifest
         "--disable-renderer-backgrounding",
         "--disable-background-timer-throttling",
         "--disable-domain-reliability",
+        "--disable-features=Translate,BackForwardCache,InterestFeedContentSuggestions,MediaRouter,OptimizationHints",
         "--metrics-recording-only",
         "--no-first-run"
     ];

@@ -6,7 +6,7 @@ using System.Diagnostics;
 
 var command = args.Length == 0 ? "help" : args[0].ToLowerInvariant();
 var options = CliOptions.Parse(args.Skip(1).ToArray());
-var logger = new SafeLogger(verbose: options.Verbose);
+var logger = new SafeLogger(verbose: options.Verbose || options.Debug);
 
 try
 {
@@ -251,6 +251,9 @@ async Task PublishReleaseAsync(CliOptions cliOptions)
     var result = await new ReleaseService(logger).PublishAsync(
         outputDirectory: cliOptions.OutputPath,
         sign: cliOptions.Sign,
+        certificatePath: cliOptions.CertificatePath,
+        certificatePassword: cliOptions.CertificatePassword,
+        timestampUrl: cliOptions.TimestampUrl,
         runtimeIdentifier: cliOptions.RuntimeIdentifier ?? "win-x64").ConfigureAwait(false);
 
     Console.WriteLine($"Release bundle: {result.ZipPath}");
@@ -276,7 +279,9 @@ async Task BenchmarkAsync(CliOptions cliOptions)
     Console.WriteLine($"Project: {build.Project.Manifest.App.Name}");
     Console.WriteLine($"Build time: {buildTimer.Elapsed.TotalMilliseconds:N0} ms");
     Console.WriteLine($"Package time: {packageTimer.Elapsed.TotalMilliseconds:N0} ms");
-    Console.WriteLine($"Avila startup: {avilaStartup:N0} ms");
+    Console.WriteLine($"Avila startup: {avilaStartup.StartupMs:N0} ms");
+    Console.WriteLine($"Avila memory: {avilaStartup.WorkingSetBytes / 1024d / 1024d:N2} MB");
+    Console.WriteLine($"Avila CPU idle: {avilaStartup.CpuIdlePercent:N1}%");
     Console.WriteLine($"Package size: {distBytes / 1024d / 1024d:N2} MB");
     Console.WriteLine(ReportFormatter.Format(package.Report));
 
@@ -286,6 +291,8 @@ async Task BenchmarkAsync(CliOptions cliOptions)
         Console.WriteLine();
         Console.WriteLine("Electron comparison");
         Console.WriteLine($"Electron startup: {electron.StartupMs:N0} ms");
+        Console.WriteLine($"Electron memory: {electron.WorkingSetBytes / 1024d / 1024d:N2} MB");
+        Console.WriteLine($"Electron CPU idle: {electron.CpuIdlePercent:N1}%");
         Console.WriteLine($"Electron package size: {electron.PackageSizeMb:N2} MB");
         Console.WriteLine($"Electron app path: {electron.AppPath}");
     }
@@ -347,7 +354,7 @@ async Task UpgradeAsync(CliOptions cliOptions)
     Console.WriteLine($"Executable: {result.ExecutablePath}");
 }
 
-async Task<double> MeasureAvilaStartupAsync(string executablePath, string workingDirectory)
+async Task<(double StartupMs, long WorkingSetBytes, double CpuIdlePercent)> MeasureAvilaStartupAsync(string executablePath, string workingDirectory)
 {
     var markerPath = Path.Combine(Path.GetTempPath(), $"avila-startup-{Guid.NewGuid():N}.txt");
     TryDelete(markerPath);
@@ -364,14 +371,21 @@ async Task<double> MeasureAvilaStartupAsync(string executablePath, string workin
     await WaitForMarkerAsync(process, markerPath, TimeSpan.FromSeconds(60)).ConfigureAwait(false);
     stopwatch.Stop();
 
+    process.Refresh();
+    var workingSetBytes = process.WorkingSet64;
+    var elapsedMs = Math.Max(1d, stopwatch.Elapsed.TotalMilliseconds);
+    var cpuMs = process.TotalProcessorTime.TotalMilliseconds;
+    var cpuUsage = Math.Clamp(cpuMs / elapsedMs / Environment.ProcessorCount * 100d, 0d, 100d);
+    var cpuIdle = 100d - cpuUsage;
+
     TryTerminate(process);
     await Task.WhenAll(stdoutTask, stderrTask).ConfigureAwait(false);
     TryDelete(markerPath);
 
-    return stopwatch.Elapsed.TotalMilliseconds;
+    return (stopwatch.Elapsed.TotalMilliseconds, workingSetBytes, cpuIdle);
 }
 
-async Task<(double StartupMs, double PackageSizeMb, string AppPath)> BenchmarkElectronAsync(string electronPath, string? avilaProjectPath)
+async Task<(double StartupMs, double PackageSizeMb, long WorkingSetBytes, double CpuIdlePercent, string AppPath)> BenchmarkElectronAsync(string electronPath, string? avilaProjectPath)
 {
     var resolvedElectron = ResolveElectronExecutablePath(electronPath);
     var electronRoot = Directory.Exists(electronPath)
@@ -454,11 +468,18 @@ app.on("window-all-closed", () => app.quit());
         await WaitForMarkerAsync(process, markerPath, TimeSpan.FromSeconds(60)).ConfigureAwait(false);
         stopwatch.Stop();
 
+        process.Refresh();
+        var workingSetBytes = process.WorkingSet64;
+        var elapsedMs = Math.Max(1d, stopwatch.Elapsed.TotalMilliseconds);
+        var cpuMs = process.TotalProcessorTime.TotalMilliseconds;
+        var cpuUsage = Math.Clamp(cpuMs / elapsedMs / Environment.ProcessorCount * 100d, 0d, 100d);
+        var cpuIdle = 100d - cpuUsage;
+
         TryTerminate(process);
         await Task.WhenAll(stdoutTask, stderrTask).ConfigureAwait(false);
 
         var packageSize = (GetDirectorySizeBytes(tempRoot) + GetDirectorySizeBytes(electronRoot)) / 1024d / 1024d;
-        return (stopwatch.Elapsed.TotalMilliseconds, packageSize, tempRoot);
+        return (stopwatch.Elapsed.TotalMilliseconds, packageSize, workingSetBytes, cpuIdle, tempRoot);
     }
     catch
     {
@@ -673,7 +694,13 @@ async Task InspectAsync(CliOptions cliOptions)
 async Task RunRuntimeAsync(CliOptions cliOptions, string mode)
 {
     var projectPath = ProjectLocator.ResolveProjectPath(cliOptions.ProjectPath);
-    var modeArgs = mode == "dev" && cliOptions.DevTools ? "--devtools" : "";
+    var modeArgs = mode == "dev"
+        ? string.Join(' ', new[]
+        {
+            cliOptions.DevTools ? "--devtools" : "",
+            cliOptions.Debug ? "--debug" : ""
+        }.Where(value => !string.IsNullOrWhiteSpace(value)))
+        : "";
     var runner = new ProcessRunner(logger);
 
     ProcessResult result;
@@ -713,6 +740,7 @@ Usage:
   avila create <app-name> [--url <site>] [--template browser-app|browser|vanilla|react|...]
   avila init <app-name>
   avila dev [--project <path>] [--devtools]
+  avila dev [--project <path>] [--devtools] [--debug]
   avila run [--project <path>]
   avila build [--project <path>]
   avila package [--project <path>] [--secure]
@@ -721,7 +749,7 @@ Usage:
   avila audit [--project <path>] [--production]
   avila upcheck
   avila upgrade [--scope user|machine] [--directory <path>]
-  avila publish [--sign] [--output <path>] [--runtime <rid>]
+  avila publish [--sign] [--cert <pfx>] [--cert-password <pwd>] [--timestamp-url <url>] [--output <path>] [--runtime <rid>]
   avila benchmark [--project <path>] [--electron <path>]
   avila version
   avila doctor [--project <path>]
@@ -754,6 +782,8 @@ internal sealed class CliOptions
 
     public bool DevTools { get; init; }
 
+    public bool Debug { get; init; }
+
     public bool Security { get; init; }
 
     public bool SecureBundle { get; init; }
@@ -761,6 +791,12 @@ internal sealed class CliOptions
     public bool Production { get; init; }
 
     public bool Sign { get; init; }
+
+    public string? CertificatePath { get; init; }
+
+    public string? CertificatePassword { get; init; }
+
+    public string? TimestampUrl { get; init; }
 
     public bool OpenRelease { get; init; }
 
@@ -779,7 +815,11 @@ internal sealed class CliOptions
         string? runtimeIdentifier = null;
         string? electronPath = null;
         string? installDirectory = null;
+        string? certificatePath = null;
+        string? certificatePassword = null;
+        string? timestampUrl = null;
         var devTools = false;
+        var debug = false;
         var security = false;
         var secureBundle = false;
         var production = false;
@@ -826,6 +866,9 @@ internal sealed class CliOptions
                 case "--devtools":
                     devTools = true;
                     break;
+                case "--debug":
+                    debug = true;
+                    break;
                 case "--security":
                     security = true;
                     break;
@@ -834,6 +877,15 @@ internal sealed class CliOptions
                     break;
                 case "--sign":
                     sign = true;
+                    break;
+                case "--cert" when index + 1 < args.Length:
+                    certificatePath = args[++index];
+                    break;
+                case "--cert-password" when index + 1 < args.Length:
+                    certificatePassword = args[++index];
+                    break;
+                case "--timestamp-url" when index + 1 < args.Length:
+                    timestampUrl = args[++index];
                     break;
                 case "--no-open":
                     openRelease = false;
@@ -857,10 +909,14 @@ internal sealed class CliOptions
             ElectronPath = electronPath,
             InstallDirectory = installDirectory,
             DevTools = devTools,
+            Debug = debug,
             Security = security,
             SecureBundle = secureBundle,
             Production = production,
             Sign = sign,
+            CertificatePath = certificatePath,
+            CertificatePassword = certificatePassword,
+            TimestampUrl = timestampUrl,
             OpenRelease = openRelease,
             InstallScope = installScope,
             Verbose = verbose,

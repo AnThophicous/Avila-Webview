@@ -6,6 +6,7 @@ namespace Avila.Windowing;
 
 public sealed class Win32WindowController
 {
+    private const int WM_NCHITTEST = 0x0084;
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     private const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
@@ -15,14 +16,22 @@ public sealed class Win32WindowController
     private const int DWMSBT_NONE = 1;
     private const int DWMSBT_MAINWINDOW = 2;
     private const int DWMSBT_TABBEDWINDOW = 4;
+    private const int HTCLIENT = 1;
+    private const int HTCAPTION = 2;
+    private const int HTLEFT = 10;
+    private const int HTRIGHT = 11;
+    private const int HTTOP = 12;
+    private const int HTTOPLEFT = 13;
+    private const int HTTOPRIGHT = 14;
+    private const int HTBOTTOM = 15;
+    private const int HTBOTTOMLEFT = 16;
+    private const int HTBOTTOMRIGHT = 17;
     private const int WM_NCLBUTTONDOWN = 0x00A1;
-    private const int HTCAPTION = 0x0002;
 
     private readonly Form _form;
     private bool _draggable = true;
     private bool _fullscreen;
     private int _cornerRadiusPx;
-    private bool _roundedRegionEnabled;
     private bool _resizable = true;
     private bool _hasDecorations = true;
     private Rectangle _restoreBounds;
@@ -31,14 +40,13 @@ public sealed class Win32WindowController
     public Win32WindowController(Form form)
     {
         _form = form;
-        _form.Resize += (_, _) => RefreshWindowChrome();
     }
 
     public void ApplyInitialWindowManifest(WindowManifest manifest)
     {
         _draggable = manifest.Draggable;
         _resizable = manifest.Resizable;
-        _hasDecorations = !manifest.Borderless;
+        _hasDecorations = false;
         _cornerRadiusPx = manifest.BorderRadiusPx;
         _form.Text = _form.Text.Length == 0 ? "Avila App" : _form.Text;
         _form.StartPosition = manifest.Center ? FormStartPosition.CenterScreen : FormStartPosition.Manual;
@@ -48,8 +56,6 @@ public sealed class Win32WindowController
         ApplyBorderStyle();
 
         ApplyDarkMode();
-        SetRoundedCorners(manifest.RoundedCorners, manifest.BorderRadiusPx);
-        SetBlur(manifest.Blur, manifest.BlurAmount);
 
         if (manifest.Mica || manifest.MicaAlt)
         {
@@ -244,7 +250,7 @@ public sealed class Win32WindowController
     {
         return OnUiThreadAsync(() =>
         {
-            _hasDecorations = enabled;
+            _hasDecorations = false;
             ApplyBorderStyle();
         }, cancellationToken);
     }
@@ -314,9 +320,8 @@ public sealed class Win32WindowController
             return;
         }
 
-        _form.FormBorderStyle = _hasDecorations
-            ? _resizable ? FormBorderStyle.Sizable : FormBorderStyle.FixedSingle
-            : FormBorderStyle.None;
+        _form.FormBorderStyle = FormBorderStyle.None;
+        _form.ControlBox = false;
         _form.MaximizeBox = _resizable;
         _form.MinimizeBox = true;
     }
@@ -341,84 +346,91 @@ public sealed class Win32WindowController
 
     private void SetRoundedCorners(bool enabled, int radiusPx)
     {
-        if (!_form.IsHandleCreated)
-        {
-            return;
-        }
-
-        _roundedRegionEnabled = enabled;
-        _cornerRadiusPx = Math.Clamp(radiusPx, 0, 30);
-
-        if (enabled && _cornerRadiusPx > 0)
-        {
-            ApplyRoundedRegion();
-        }
-        else
-        {
-            ClearRoundedRegion();
-        }
-
-        var preference = enabled && _cornerRadiusPx == 0 ? DWMWCP_ROUND : DWMWCP_DONOTROUND;
-        TryDwmSetWindowAttribute(_form.Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref preference);
+        _cornerRadiusPx = 0;
     }
 
     private void SetBlur(bool enabled, double blurAmount)
     {
-        if (!_form.IsHandleCreated)
-        {
-            return;
-        }
-
-        var amount = Math.Max(0d, blurAmount);
-        if (!enabled && amount <= 0)
-        {
-            _form.Opacity = 1d;
-            return;
-        }
-
-        var normalized = amount <= 1d ? amount : Math.Clamp(amount / 30d, 0d, 1d);
-        var opacity = 1d - (0.18d + normalized * 0.32d);
-        _form.Opacity = Math.Clamp(opacity, 0.55d, 1d);
+        _form.Opacity = 1d;
     }
 
-    private void RefreshWindowChrome()
+    public bool HandleWndProc(ref Message m)
     {
-        if (!_roundedRegionEnabled || _cornerRadiusPx <= 0 || _form.IsDisposed || !_form.IsHandleCreated)
+        if (m.Msg != WM_NCHITTEST || !_resizable || _fullscreen || !_form.IsHandleCreated || _form.IsDisposed)
         {
-            return;
+            return false;
         }
 
-        ApplyRoundedRegion();
+        var hit = HitTest(m.LParam);
+        if (hit == HTCLIENT)
+        {
+            return false;
+        }
+
+        m.Result = (IntPtr)hit;
+        return true;
     }
 
-    private void ApplyRoundedRegion()
+    private int HitTest(IntPtr lParam)
     {
-        if (_fullscreen || _form.Width <= 0 || _form.Height <= 0)
+        var point = ToPoint(lParam);
+        var client = _form.PointToClient(point);
+        const int grip = 8;
+
+        var left = client.X <= grip;
+        var right = client.X >= _form.ClientSize.Width - grip;
+        var top = client.Y <= grip;
+        var bottom = client.Y >= _form.ClientSize.Height - grip;
+
+        if (top && left)
         {
-            return;
+            return HTTOPLEFT;
         }
 
-        var radius = Math.Clamp(_cornerRadiusPx, 1, 30);
-        var region = CreateRoundRectRgn(0, 0, _form.Width + 1, _form.Height + 1, radius * 2, radius * 2);
-        if (region == IntPtr.Zero)
+        if (top && right)
         {
-            return;
+            return HTTOPRIGHT;
         }
 
-        if (!SetWindowRgn(_form.Handle, region, redraw: true).ToBool())
+        if (bottom && left)
         {
-            DeleteObject(region);
+            return HTBOTTOMLEFT;
         }
+
+        if (bottom && right)
+        {
+            return HTBOTTOMRIGHT;
+        }
+
+        if (left)
+        {
+            return HTLEFT;
+        }
+
+        if (right)
+        {
+            return HTRIGHT;
+        }
+
+        if (top)
+        {
+            return HTTOP;
+        }
+
+        if (bottom)
+        {
+            return HTBOTTOM;
+        }
+
+        return HTCLIENT;
     }
 
-    private void ClearRoundedRegion()
+    private static Point ToPoint(IntPtr lParam)
     {
-        if (!_form.IsHandleCreated)
-        {
-            return;
-        }
-
-        SetWindowRgn(_form.Handle, IntPtr.Zero, redraw: true);
+        var value = lParam.ToInt64();
+        var x = unchecked((short)(value & 0xFFFF));
+        var y = unchecked((short)((value >> 16) & 0xFFFF));
+        return new Point(x, y);
     }
 
     private void ApplyDarkMode()

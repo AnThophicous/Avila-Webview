@@ -15,7 +15,7 @@ avila verify .\dist\app.avila.bundle
 avila audit --project .\my-app.avw
 avila audit --project .\my-app.avw --production
 avila benchmark --project .\my-app.avw --electron C:\Tools\Electron\electron.exe
-avila publish
+avila publish --cert C:\certs\avila-release.pfx --cert-password <secret>
 ```
 
 ## Pipeline
@@ -32,7 +32,8 @@ avila publish
 10. Write `<OutputName>.avwmeta.json`, `build-report.txt`, and `Versionate.txt`.
 11. Mirror the final distributable into `buildclear/dist` when the repository root is available, and copy the release marker next to it.
 12. Emit a startup marker during dev so `avila benchmark` can measure first paint and compare it to Electron when a local Electron path is supplied.
-13. Use `avila publish` for the compiled engine bundle that users can download directly.
+13. Record startup memory, CPU idle, and output size in `avila benchmark`.
+14. Use `avila publish` for the compiled engine bundle that users can download directly, optionally signing with a certificate path when provided.
 
 ## Output
 
@@ -93,13 +94,14 @@ dotnet run --project src/Avila.CLI -- inspect package --project .\my-app.avw
 - hot reload reacts to frontend file changes and the backend runtime can restart or reload based on the project configuration
 - dev errors are redirected to the inspector console screen instead of failing silently in the terminal
 - console errors and frontend runtime errors are captured in a dedicated debug surface
+- `avila dev --debug` adds lifecycle, bridge call, and perf logging
 - `sandbox`, `contextIsolation`, `AreHostObjectsAllowed = false`, and the permission allowlist keep the runtime tight by default
-- `window` chrome options such as `roundedCorners`, `borderRadiusPx`, `blur`, and `blurAmount` come from the manifest and are clamped to safe values
+- the runtime is borderless by default and the public SDK does not expose border tuning APIs
 
 The web frontend should remain the only thing changing rapidly; the engine itself stays controlled and predictable.
 
 The `package` command also keeps `buildclear/dist` synced with the latest release when Avila is running from the source repository. That folder is the clean latest-release snapshot for launcher and smoke-test use.
-`Versionate.txt` is the single release marker. For the current official patch release, the file contains `26.0.2 Release`.
+`Versionate.txt` is the single release marker. For the current official patch release, the file contains `26.0.3 Release`.
 
 ## Roadmap
 

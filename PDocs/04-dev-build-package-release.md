@@ -10,6 +10,7 @@ cd my-app
 avila upcheck
 avila upgrade
 avila dev
+avila dev --debug
 avila build
 avila package
 ```
@@ -41,6 +42,7 @@ The main commands are:
 - `avila version`
 - `avila upcheck`
 - `avila upgrade`
+- `avila publish --cert <pfx> --cert-password <secret>`
 
 ## Scaffolding
 
@@ -63,7 +65,8 @@ Dev mode should optimize for iteration:
 
 - WebView2 opens the local app shell
 - the bridge is injected for local apps
-- hot reload should react to file changes
+- hot reload should react to file changes and preserve state when possible
+- `avila dev --debug` should show lifecycle, bridge, and perf logs
 - runtime errors and console errors should surface in the inspector console screen
 - the app should not need a full rebuild for every edit
 - output folders should be ignored to avoid reload loops

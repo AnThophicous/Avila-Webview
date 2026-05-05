@@ -35,6 +35,7 @@ public static class SdkInjector
             bridgeTimeoutMs = project.Manifest.Security.BridgeTimeoutMs,
             sandbox = project.Manifest.Security.Sandbox,
             contextIsolation = project.Manifest.Security.ContextIsolation,
+            preserveStateOnReload = project.Manifest.Performance.PreserveStateOnReload,
             localHost = OriginPolicy.VirtualHost,
             dragRegions = project.Manifest.Window.DragRegions,
             noDragRegions = project.Manifest.Window.NoDragRegions
@@ -90,6 +91,28 @@ public static class SdkInjector
       stack: reason.stack || ""
     });
   });
+
+  let lastActivityPost = 0;
+  const postActivity = () => {
+    const now = Date.now();
+    if (now - lastActivityPost < 1500) {
+      return;
+    }
+
+    lastActivityPost = now;
+    try {
+      globalThis.chrome?.webview?.postMessage({
+        type: "avila.activity",
+        timestamp: now,
+        url: globalThis.location ? String(globalThis.location.href) : ""
+      });
+    } catch {
+    }
+  };
+
+  for (const name of ["pointerdown", "pointermove", "keydown", "wheel", "touchstart"]) {
+    globalThis.addEventListener(name, postActivity, { passive: true, capture: true });
+  }
 
   for (const level of ["error", "warn"]) {
     const original = global.console && typeof global.console[level] === "function"

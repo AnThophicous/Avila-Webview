@@ -60,12 +60,13 @@ Native fetch and WebView navigation are different policies.
 
 Window chrome belongs in the manifest too, but it should stay bounded:
 
-- `roundedCorners`
-- `borderRadiusPx`
-- `blur`
-- `blurAmount`
+- borderless behavior
+- draggable regions
+- optional Mica / backdrop hints
 
-Those fields should be treated as rendering hints with safe limits, not as arbitrary low-level escapes.
+The public SDK should not expose border shaping controls. The runtime is
+borderless by default, and any legacy chrome hints should be treated as
+compatibility-only behavior, not as a primary design surface.
 
 ## Separate Policy Buckets
 

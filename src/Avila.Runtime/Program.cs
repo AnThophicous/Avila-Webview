@@ -44,7 +44,10 @@ internal static class Program
             var logger = new SafeLogger(
                 logDirectory,
                 sanitize: project.Manifest.Security.SanitizeLogs,
-                verbose: options.Mode.Equals("dev", StringComparison.OrdinalIgnoreCase));
+                verbose: options.Mode.Equals("dev", StringComparison.OrdinalIgnoreCase) || options.Debug);
+
+            logger.Trace($"runtime mode: {options.Mode}");
+            logger.Trace($"startup stage: {RuntimeStage.BackgroundPreparation}");
 
             foreach (var warning in validation.Warnings)
             {
@@ -91,11 +94,17 @@ internal static class Program
             var diagnostics = new DiagnosticsCollector();
             var workers = new AvilaWorkerPool(new WorkerPoolOptions
             {
-                MinWorkers = project.Manifest.Performance.WarmWorkerPool ? project.Manifest.Performance.WorkerPoolMin : 0,
+                MinWorkers = project.Manifest.Performance.WarmWorkerPool ? project.Manifest.Performance.StartupWorkers : 0,
                 MaxWorkers = project.Manifest.Performance.WorkerPoolMax,
+                StartupWorkers = project.Manifest.Performance.StartupWorkers,
+                OpenWorkers = project.Manifest.Performance.OpenWorkers,
+                IdleWorkers = project.Manifest.Performance.IdleWorkers,
                 IdleShrinkDelay = TimeSpan.FromMilliseconds(project.Manifest.Performance.ShrinkDelayMs),
                 DefaultTimeout = TimeSpan.FromMilliseconds(project.Manifest.Security.BridgeTimeoutMs)
             }, logger);
+            workers.ConfigureTargetWorkers(
+                project.Manifest.Performance.StartupWorkers,
+                project.Manifest.Performance.WorkerPoolMax);
 
             var capabilities = new CapabilityManager();
             Application.Run(new AvilaApplicationForm(project, options, capabilities, logger, diagnostics, workers, logDirectory));

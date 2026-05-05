@@ -7,7 +7,7 @@ The release marker lives in `Versionate.txt` and is the single source of truth f
 Current official patch release:
 
 ```txt
-26.0.2 Release
+26.0.3 Release
 ```
 
 Meaning:

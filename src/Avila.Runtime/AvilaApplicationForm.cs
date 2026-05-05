@@ -12,6 +12,7 @@ namespace Avila.Runtime;
 
 public sealed class AvilaApplicationForm : Form
 {
+    private const int IdleCheckIntervalMs = 15_000;
     private readonly AvilaProject _project;
     private readonly RuntimeOptions _options;
     private readonly CapabilityManager _capabilities;
@@ -28,9 +29,14 @@ public sealed class AvilaApplicationForm : Form
     private SecureBundleHost? _secureBundleHost;
     private FileSystemWatcher? _devWatcher;
     private System.Threading.Timer? _devReloadTimer;
+    private readonly System.Windows.Forms.Timer _idleTimer = new();
     private RemoteWebViewManager? _remoteWebViews;
     private BridgeHost? _bridge;
     private bool _devErrorRendered;
+    private bool _suspended;
+    private bool _openStageReached;
+    private DateTimeOffset _lastActivityAt = DateTimeOffset.UtcNow;
+    private string? _pendingReloadState;
 
     public AvilaApplicationForm(
         AvilaProject project,
@@ -62,6 +68,7 @@ public sealed class AvilaApplicationForm : Form
         _webView.DefaultBackgroundColor = Color.FromArgb(30, 30, 33);
         Controls.Add(_webView);
         WireWindowEvents();
+        ConfigureIdleMonitor();
     }
 
     protected override async void OnLoad(EventArgs e)
@@ -70,6 +77,8 @@ public sealed class AvilaApplicationForm : Form
 
         try
         {
+            MarkActivity("startup");
+            TransitionStartupStage(RuntimeStage.BackgroundPreparation);
             _windowController.ApplyInitialWindowManifest(_project.Manifest.Window);
             await InitializeWebViewAsync().ConfigureAwait(true);
             _diagnostics.MarkInitialMemory();
@@ -106,6 +115,7 @@ public sealed class AvilaApplicationForm : Form
         _secureBundleHost?.Dispose();
         _devWatcher?.Dispose();
         _devReloadTimer?.Dispose();
+        _idleTimer.Dispose();
         _remoteWebViews?.Dispose();
         await _workers.DisposeAsync().ConfigureAwait(false);
     }
@@ -117,11 +127,17 @@ public sealed class AvilaApplicationForm : Form
             return;
         }
 
+        if (_windowController.HandleWndProc(ref m))
+        {
+            return;
+        }
+
         base.WndProc(ref m);
     }
 
     private async Task InitializeWebViewAsync()
     {
+        TransitionStartupStage(RuntimeStage.WebViewWorking);
         var userDataPath = GetUserDataPath();
         Directory.CreateDirectory(userDataPath);
 
@@ -186,6 +202,8 @@ public sealed class AvilaApplicationForm : Form
             var entryPath = _project.Manifest.App.Entry.Replace('\\', '/').TrimStart('/');
             _webView.CoreWebView2.Navigate($"https://{OriginPolicy.VirtualHost}/{entryPath}");
         }
+
+        MarkActivity("webview-ready");
     }
 
     private void ConfigureWebViewSettings()
@@ -235,6 +253,11 @@ public sealed class AvilaApplicationForm : Form
 
         _webView.CoreWebView2.WebMessageReceived += async (_, args) =>
         {
+            if (TryHandleRuntimeMessage(args.WebMessageAsJson))
+            {
+                return;
+            }
+
             if (TryHandleDevMessage(args.WebMessageAsJson))
             {
                 return;
@@ -253,14 +276,36 @@ public sealed class AvilaApplicationForm : Form
         {
             _diagnostics.MarkFirstPaint();
             MarkBenchmarkReady();
+            MarkActivity("domcontentloaded");
+            if (!_openStageReached)
+            {
+                TransitionStartupStage(RuntimeStage.Open);
+                _openStageReached = true;
+            }
+            _ = RestoreReloadStateAsync();
         };
-        _webView.CoreWebView2.SourceChanged += (_, _) => PostBrowserEvent("url", new { url = _webView.CoreWebView2.Source });
-        _webView.CoreWebView2.DocumentTitleChanged += (_, _) => PostBrowserEvent("title", new { title = _webView.CoreWebView2.DocumentTitle });
+        _webView.CoreWebView2.SourceChanged += (_, _) =>
+        {
+            MarkActivity("sourcechanged");
+            PostBrowserEvent("url", new { url = _webView.CoreWebView2.Source });
+        };
+        _webView.CoreWebView2.DocumentTitleChanged += (_, _) =>
+        {
+            MarkActivity("titlechanged");
+            PostBrowserEvent("title", new { title = _webView.CoreWebView2.DocumentTitle });
+        };
+        _webView.CoreWebView2.NavigationStarting += (_, _) => MarkActivity("navigationstarting");
         _webView.CoreWebView2.NavigationCompleted += (_, args) =>
         {
+            MarkActivity("navigationcompleted");
             if (args.IsSuccess)
             {
                 PostBrowserEvent("loaded", new { url = _webView.CoreWebView2.Source });
+                if (!_openStageReached)
+                {
+                    TransitionStartupStage(RuntimeStage.Open);
+                    _openStageReached = true;
+                }
             }
             else
             {
@@ -445,6 +490,32 @@ public sealed class AvilaApplicationForm : Form
         }
     }
 
+    private bool TryHandleRuntimeMessage(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("type", out var typeProperty))
+            {
+                return false;
+            }
+
+            var type = typeProperty.GetString();
+            if (string.Equals(type, "avila.activity", StringComparison.OrdinalIgnoreCase))
+            {
+                MarkActivity("bridge-activity");
+                return true;
+            }
+
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private void RenderDevErrorPage(DevErrorSnapshot snapshot)
     {
         if (_webView.CoreWebView2 is null || _webView.IsDisposed)
@@ -486,23 +557,269 @@ public sealed class AvilaApplicationForm : Form
         }
     }
 
+    private void ConfigureIdleMonitor()
+    {
+        _idleTimer.Interval = IdleCheckIntervalMs;
+        _idleTimer.Tick += async (_, _) =>
+        {
+            try
+            {
+                await EvaluateIdleStateAsync().ConfigureAwait(true);
+            }
+            catch (Exception exception)
+            {
+                _logger.Warning($"Idle monitor failed: {exception.Message}");
+            }
+        };
+        _idleTimer.Start();
+    }
+
+    private async Task EvaluateIdleStateAsync()
+    {
+        if (_webView.CoreWebView2 is null || _webView.IsDisposed)
+        {
+            return;
+        }
+
+        var idleFor = DateTimeOffset.UtcNow - _lastActivityAt;
+        var threshold = TimeSpan.FromMilliseconds(_project.Manifest.Performance.IdleSuspendAfterMs);
+
+        if (!_suspended && idleFor >= threshold)
+        {
+            _logger.Trace($"idle suspend after {idleFor.TotalMinutes:N1} min");
+            _workers.ConfigureTargetWorkers(_project.Manifest.Performance.IdleWorkers, _project.Manifest.Performance.WorkerPoolMax);
+            await TrySuspendWebViewAsync().ConfigureAwait(true);
+            GC.Collect(2, GCCollectionMode.Optimized, blocking: false, compacting: true);
+            _suspended = true;
+            return;
+        }
+
+        if (_suspended && idleFor < threshold)
+        {
+            await ResumeWebViewAsync().ConfigureAwait(true);
+            _workers.ConfigureTargetWorkers(_project.Manifest.Performance.OpenWorkers, _project.Manifest.Performance.WorkerPoolMax);
+            _suspended = false;
+        }
+    }
+
+    private Task TrySuspendWebViewAsync()
+    {
+        return InvokeUiAsync(async () =>
+        {
+            if (_webView.CoreWebView2 is null)
+            {
+                return;
+            }
+
+            try
+            {
+                await _webView.CoreWebView2.TrySuspendAsync().ConfigureAwait(true);
+            }
+            catch (Exception exception)
+            {
+                _logger.Warning($"Could not suspend WebView2: {exception.Message}");
+            }
+        });
+    }
+
+    private Task ResumeWebViewAsync()
+    {
+        return InvokeUiAsync(() =>
+        {
+            if (_webView.CoreWebView2 is null)
+            {
+                return Task.CompletedTask;
+            }
+
+            try
+            {
+                _webView.CoreWebView2.Resume();
+            }
+            catch (Exception exception)
+            {
+                _logger.Warning($"Could not resume WebView2: {exception.Message}");
+            }
+
+            return Task.CompletedTask;
+        });
+    }
+
+    private void TransitionStartupStage(RuntimeStage stage)
+    {
+        _diagnostics.MarkStage(stage);
+        _logger.Trace($"startup stage: {stage}");
+
+        if (stage == RuntimeStage.Open)
+        {
+            _workers.ConfigureTargetWorkers(_project.Manifest.Performance.OpenWorkers, _project.Manifest.Performance.WorkerPoolMax);
+            GC.Collect(2, GCCollectionMode.Optimized, blocking: false, compacting: true);
+        }
+        else if (stage == RuntimeStage.BackgroundPreparation)
+        {
+            _workers.ConfigureTargetWorkers(_project.Manifest.Performance.StartupWorkers, _project.Manifest.Performance.WorkerPoolMax);
+        }
+    }
+
+    private void MarkActivity(string reason)
+    {
+        _lastActivityAt = DateTimeOffset.UtcNow;
+        _logger.Trace($"activity: {reason}");
+
+        if (_suspended)
+        {
+            _workers.ConfigureTargetWorkers(_project.Manifest.Performance.OpenWorkers, _project.Manifest.Performance.WorkerPoolMax);
+            _ = ResumeWebViewAsync();
+            _suspended = false;
+        }
+    }
+
+    private async Task RestoreReloadStateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_pendingReloadState) || _webView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        var state = _pendingReloadState;
+        _pendingReloadState = null;
+
+        var script = $$"""
+(() => {
+  const state = {{state}};
+  if (!state) {
+    return;
+  }
+  try {
+    if (state.sessionStorage && typeof state.sessionStorage === "object") {
+      for (const [key, value] of Object.entries(state.sessionStorage)) {
+        sessionStorage.setItem(key, value);
+      }
+    }
+    if (typeof state.scrollX === "number" && typeof state.scrollY === "number") {
+      window.scrollTo(state.scrollX, state.scrollY);
+    }
+    if (state.activeElementId) {
+      const element = document.getElementById(state.activeElementId);
+      if (element && typeof element.focus === "function") {
+        element.focus({ preventScroll: true });
+      }
+    }
+  } catch (_) {
+  }
+})();
+""";
+
+        try
+        {
+            await _webView.CoreWebView2.ExecuteScriptAsync(script).ConfigureAwait(true);
+        }
+        catch (Exception exception)
+        {
+            _logger.Warning($"Could not restore reload state: {exception.Message}");
+        }
+    }
+
+    private async Task CaptureReloadStateAndReloadAsync()
+    {
+        if (_webView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var result = await _webView.CoreWebView2.ExecuteScriptAsync("""
+(() => JSON.stringify({
+  scrollX: window.scrollX,
+  scrollY: window.scrollY,
+  activeElementId: document.activeElement && document.activeElement.id ? document.activeElement.id : "",
+  sessionStorage: Object.fromEntries(Object.keys(sessionStorage).map(key => [key, sessionStorage.getItem(key)]))
+}))
+""").ConfigureAwait(true);
+            _pendingReloadState = JsonSerializer.Deserialize<string>(result) ?? result;
+        }
+        catch (Exception exception)
+        {
+            _logger.Warning($"Could not capture reload state: {exception.Message}");
+            _pendingReloadState = null;
+        }
+
+        try
+        {
+            _webView.CoreWebView2.Reload();
+        }
+        catch (Exception exception)
+        {
+            _logger.Warning($"Could not trigger smart reload: {exception.Message}");
+            _webView.CoreWebView2.Reload();
+        }
+    }
+
+    private Task InvokeUiAsync(Func<Task> action)
+    {
+        if (_webView.IsDisposed)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (!_webView.InvokeRequired)
+        {
+            return action();
+        }
+
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _webView.BeginInvoke(new Action(async () =>
+        {
+            try
+            {
+                await action().ConfigureAwait(true);
+                tcs.TrySetResult();
+            }
+            catch (Exception exception)
+            {
+                tcs.TrySetException(exception);
+            }
+        }));
+
+        return tcs.Task;
+    }
+
     private void WireWindowEvents()
     {
-        Resize += (_, _) => PostWindowEvent("resize", new
+        Resize += (_, _) =>
         {
-            width = ClientSize.Width,
-            height = ClientSize.Height,
-            state = WindowState.ToString().ToLowerInvariant()
-        });
-        Move += (_, _) => PostWindowEvent("move", new { x = Left, y = Top });
-        Activated += (_, _) => PostWindowEvent("focus", new { focused = true });
+            MarkActivity("resize");
+            PostWindowEvent("resize", new
+            {
+                width = ClientSize.Width,
+                height = ClientSize.Height,
+                state = WindowState.ToString().ToLowerInvariant()
+            });
+        };
+        Move += (_, _) =>
+        {
+            MarkActivity("move");
+            PostWindowEvent("move", new { x = Left, y = Top });
+        };
+        Activated += (_, _) =>
+        {
+            MarkActivity("activated");
+            PostWindowEvent("focus", new { focused = true });
+        };
         Deactivate += (_, _) => PostWindowEvent("blur", new { focused = false });
-        KeyDown += (_, args) => _nativeShell.HandleLocalKeyDown(args);
+        KeyDown += (_, args) =>
+        {
+            MarkActivity("keydown");
+            _nativeShell.HandleLocalKeyDown(args);
+        };
         FormClosing += (_, args) => PostWindowEvent("closeRequested", new
         {
             reason = args.CloseReason.ToString(),
             cancellable = false
         });
+        MouseMove += (_, _) => MarkActivity("mousemove");
+        MouseDown += (_, _) => MarkActivity("mousedown");
+        MouseWheel += (_, _) => MarkActivity("mousewheel");
     }
 
     private static bool IsLocalUri(string uri)
@@ -651,11 +968,11 @@ public sealed class AvilaApplicationForm : Form
             {
                 if (_webView.InvokeRequired)
                 {
-                    _webView.BeginInvoke(() => _webView.CoreWebView2.Reload());
+                    _webView.BeginInvoke(new Action(() => _ = CaptureReloadStateAndReloadAsync()));
                 }
                 else
                 {
-                    _webView.CoreWebView2.Reload();
+                    _ = CaptureReloadStateAndReloadAsync();
                 }
             }
             catch
@@ -714,6 +1031,7 @@ public sealed class AvilaApplicationForm : Form
             return;
         }
 
+        _logger.Trace("dev hot reload scheduled");
         _devReloadTimer.Change(350, Timeout.Infinite);
     }
 }

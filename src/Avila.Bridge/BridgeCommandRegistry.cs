@@ -117,6 +117,10 @@ public sealed partial class BridgeCommandRegistry
             return Task.FromResult<object?>(new
             {
                 startupMs = snapshot.StartupElapsed.TotalMilliseconds,
+                stage = snapshot.CurrentStage.ToString(),
+                backgroundPreparationMs = snapshot.BackgroundPreparationAt?.TotalMilliseconds,
+                webviewWorkingMs = snapshot.WebViewWorkingAt?.TotalMilliseconds,
+                openMs = snapshot.OpenAt?.TotalMilliseconds,
                 firstPaintMs = snapshot.FirstPaintAt?.TotalMilliseconds,
                 bridgeReadyMs = snapshot.BridgeReadyAt?.TotalMilliseconds,
                 initialWorkingSetBytes = snapshot.InitialWorkingSetBytes,
@@ -124,7 +128,8 @@ public sealed partial class BridgeCommandRegistry
                 workerQueueDepth = snapshot.WorkerQueueDepth,
                 activeWorkers = snapshot.ActiveWorkers,
                 bridgeCalls = snapshot.BridgeCalls,
-                errors = snapshot.Errors
+                errors = snapshot.Errors,
+                stageHits = snapshot.StageHits
             });
         });
 
@@ -328,13 +333,6 @@ public sealed partial class BridgeCommandRegistry
         {
             var enabled = PayloadReader.GetBoolean(request.Payload, "enabled");
             await context.Window.SetMicaAsync(enabled, token).ConfigureAwait(false);
-            return new { applied = true };
-        });
-
-        Register("window.setRoundedCorners", async (context, request, token) =>
-        {
-            var enabled = PayloadReader.GetBoolean(request.Payload, "enabled");
-            await context.Window.SetRoundedCornersAsync(enabled, token).ConfigureAwait(false);
             return new { applied = true };
         });
 

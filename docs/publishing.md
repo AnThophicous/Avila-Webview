@@ -30,7 +30,7 @@ required in source control.
 Avila uses a calendar-based release marker. The current official patch release is:
 
 ```txt
-26.0.2 Release
+26.0.3 Release
 ```
 
 That value is stored in `Versionate.txt` and is resolved by the CLI and
@@ -45,9 +45,10 @@ packaging pipeline.
 5. Run `avila build` on the target project or template.
 6. Run `avila package` to produce the clean EXE output for apps.
 7. Publish the CLI once to a bootstrap folder, then run `avila publish` from that compiled executable.
-8. Inspect the generated package, secure bundle, release bundle, and the local `buildclear/dist` snapshot.
-9. Commit the source changes only.
-10. Push the branch and tag to GitHub.
+8. If you have a release certificate, pass it with `--cert` and `--cert-password` so the final EXE and bundle are signed.
+9. Inspect the generated package, secure bundle, release bundle, and the local `buildclear/dist` snapshot.
+10. Commit the source changes only.
+11. Push the branch and tag to GitHub.
 
 Example release bootstrap:
 
