@@ -28,7 +28,6 @@
     "app.info": true,
     "system.ping": true,
     "window.setMica": true,
-    "window.setRoundedCorners": true,
     "os.exec": false
   },
   "fs": {
@@ -82,6 +81,14 @@
     "enabled": false,
     "mode": "dev-only",
     "allowedScripts": ["dev", "build"]
+  },
+  "package": {
+    "secureBundle": false,
+    "signBundle": false,
+    "verifyOnStartup": true,
+    "serveFromBundle": false,
+    "removeSourceMaps": true,
+    "exposeAppFolder": true
   }
 }
 ```
@@ -125,9 +132,29 @@ Recommended BrowserApp example:
 }
 ```
 
+## Package
+
+`package` controls how Avila distributes the app after build:
+
+- `secureBundle`: seal the frontend into `app.avila.bundle`
+- `signBundle`: write a signed manifest and public key sidecar
+- `verifyOnStartup`: require bundle verification before loading the app
+- `serveFromBundle`: serve assets from the verified bundle instead of an open folder
+- `removeSourceMaps`: delete source maps from packaged output
+- `exposeAppFolder`: keep `dist/app` visible for folder-mode distribution
+
+Recommended production defaults:
+
+- set `secureBundle` to `true` for customer releases
+- set `signBundle` to `true` when you ship a signed release process
+- keep `verifyOnStartup` on
+- keep `serveFromBundle` on when using secure distribution
+- keep `removeSourceMaps` on unless the build is a debug distribution
+- set `exposeAppFolder` to `false` for secure bundle releases
+
 ## Window
 
-The MVP supports initial size, minimum size, centering, borderless mode, rounded corners, Mica, custom draggable regions, and runtime calls such as `window.setMica` and `window.setRoundedCorners`.
+The runtime is borderless by default. It supports initial size, minimum size, centering, Mica, custom draggable regions, and runtime calls such as `window.setMica`.
 
 ## Permissions
 
@@ -142,6 +169,7 @@ Recommended production defaults:
 - enable only the bridge commands the app calls
 - set `app.icon` to your own brand before packaging
 - set `build.outputName` to your own product name before packaging
+- use `package.secureBundle` for customer-facing releases that should not expose the frontend as loose files
 
 ## File System
 

@@ -3,7 +3,7 @@ namespace Avila.Core;
 public static class Versionate
 {
     public const string FileName = "Versionate.txt";
-    public const string CurrentRelease = "26.0.1 Startup | Release";
+    public const string CurrentRelease = "26.0.3 Release";
 
     public static string ResolveText(params string?[] roots)
     {

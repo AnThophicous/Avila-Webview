@@ -8,8 +8,17 @@ public sealed class DiagnosticsCollector
     private readonly Stopwatch _startup = Stopwatch.StartNew();
     private readonly ConcurrentDictionary<string, long> _bridgeCalls = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, long> _errors = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, long> _stageHits = new(StringComparer.Ordinal);
 
     public TimeSpan StartupElapsed => _startup.Elapsed;
+
+    public RuntimeStage CurrentStage { get; private set; } = RuntimeStage.BackgroundPreparation;
+
+    public TimeSpan? BackgroundPreparationAt { get; private set; }
+
+    public TimeSpan? WebViewWorkingAt { get; private set; }
+
+    public TimeSpan? OpenAt { get; private set; }
 
     public TimeSpan? FirstPaintAt { get; private set; }
 
@@ -22,6 +31,25 @@ public sealed class DiagnosticsCollector
     public void MarkInitialMemory()
     {
         InitialWorkingSetBytes = Environment.WorkingSet;
+    }
+
+    public void MarkStage(RuntimeStage stage)
+    {
+        CurrentStage = stage;
+        _stageHits.AddOrUpdate(stage.ToString(), 1, static (_, value) => value + 1);
+        var elapsed = _startup.Elapsed;
+        switch (stage)
+        {
+            case RuntimeStage.BackgroundPreparation:
+                BackgroundPreparationAt ??= elapsed;
+                break;
+            case RuntimeStage.WebViewWorking:
+                WebViewWorkingAt ??= elapsed;
+                break;
+            case RuntimeStage.Open:
+                OpenAt ??= elapsed;
+                break;
+        }
     }
 
     public void MarkPostShrinkMemory()
@@ -53,6 +81,10 @@ public sealed class DiagnosticsCollector
     {
         return new DiagnosticsSnapshot(
             StartupElapsed,
+            CurrentStage,
+            BackgroundPreparationAt,
+            WebViewWorkingAt,
+            OpenAt,
             FirstPaintAt,
             BridgeReadyAt,
             InitialWorkingSetBytes,
@@ -60,12 +92,24 @@ public sealed class DiagnosticsCollector
             workerQueueDepth,
             activeWorkers,
             _bridgeCalls.ToDictionary(),
-            _errors.ToDictionary());
+            _errors.ToDictionary(),
+            _stageHits.ToDictionary());
     }
+}
+
+public enum RuntimeStage
+{
+    BackgroundPreparation,
+    WebViewWorking,
+    Open
 }
 
 public sealed record DiagnosticsSnapshot(
     TimeSpan StartupElapsed,
+    RuntimeStage CurrentStage,
+    TimeSpan? BackgroundPreparationAt,
+    TimeSpan? WebViewWorkingAt,
+    TimeSpan? OpenAt,
     TimeSpan? FirstPaintAt,
     TimeSpan? BridgeReadyAt,
     long InitialWorkingSetBytes,
@@ -73,4 +117,5 @@ public sealed record DiagnosticsSnapshot(
     int WorkerQueueDepth,
     int ActiveWorkers,
     IReadOnlyDictionary<string, long> BridgeCalls,
-    IReadOnlyDictionary<string, long> Errors);
+    IReadOnlyDictionary<string, long> Errors,
+    IReadOnlyDictionary<string, long> StageHits);

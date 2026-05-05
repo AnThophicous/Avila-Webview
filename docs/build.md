@@ -5,11 +5,17 @@ The packaging pipeline is intentionally simple and auditable in the MVP.
 ## Commands
 
 ```powershell
+avila upcheck
+avila upgrade --scope user
 avila check --project .\my-app.avw
 avila build --project .\my-app.avw
 avila package --project .\my-app.avw
+avila package --project .\my-app.avw --secure
+avila verify .\dist\app.avila.bundle
 avila audit --project .\my-app.avw
-avila publish
+avila audit --project .\my-app.avw --production
+avila benchmark --project .\my-app.avw --electron C:\Tools\Electron\electron.exe
+avila publish --cert C:\certs\avila-release.pfx --cert-password <secret>
 ```
 
 ## Pipeline
@@ -17,14 +23,17 @@ avila publish
 1. Load `avila.json`.
 2. Validate schema, safe paths, permissions, and insecure options.
 3. Write `build/avila.build.json` and `build/avila.build.txt`.
-4. Copy app files into `dist/app`.
-5. Run `dotnet publish` for `src/Avila.Runtime`.
-6. Rename the published `Avila.exe` to the configured `build.outputName`.
-7. Remove PDB/XML files from the package output.
-8. Validate that no dev-only or secret-like files are present.
-9. Write `<OutputName>.avwmeta.json`, `build-report.txt`, and `Versionate.txt`.
-10. Mirror the final distributable into `buildclear/dist` when the repository root is available, and copy the release marker next to it.
-11. Use `avila publish` for the compiled engine bundle that users can download directly.
+4. Copy app files into `dist/app` for normal packages, or seal them into `app.avila.bundle` for secure packages.
+5. Generate the bundle manifest, SHA256 file, signature, and embedded public key when `--secure` is enabled.
+6. Run `dotnet publish` for `src/Avila.Runtime`.
+7. Rename the published `Avila.exe` to the configured `build.outputName`.
+8. Remove PDB/XML files from the package output.
+9. Validate that no dev-only or secret-like files are present.
+10. Write `<OutputName>.avwmeta.json`, `build-report.txt`, and `Versionate.txt`.
+11. Mirror the final distributable into `buildclear/dist` when the repository root is available, and copy the release marker next to it.
+12. Emit a startup marker during dev so `avila benchmark` can measure first paint and compare it to Electron when a local Electron path is supplied.
+13. Record startup memory, CPU idle, and output size in `avila benchmark`.
+14. Use `avila publish` for the compiled engine bundle that users can download directly, optionally signing with a certificate path when provided.
 
 ## Output
 
@@ -40,6 +49,22 @@ dist/
   build-report.txt
 ```
 
+Secure package layout:
+
+```txt
+dist/
+  MyApp.exe
+  Versionate.txt
+  MyApp.avwmeta.json
+  build-report.txt
+  logs/
+  app.avila.bundle
+  app.avila.bundle.manifest.json
+  app.avila.bundle.sig
+  app.avila.bundle.publickey.txt
+  app.avila.bundle.sha256.txt
+```
+
 ## Native AOT
 
 Native AOT is exposed as an option but remains experimental. WebView2, WinForms, COM interop, and reflection-based APIs may require additional trimming annotations or may not be compatible in all configurations.
@@ -51,6 +76,7 @@ Native AOT is exposed as an option but remains experimental. WebView2, WinForms,
 - Aggressive trimming can break desktop UI or COM interop.
 - Remote content support needs stricter origin-specific API isolation.
 - `os.exec` remains disabled; use `process.spawn` or `process.execFile`, which require allowlists, argument arrays, output limits, cwd roots, and timeouts.
+- Secure bundles protect integrity and tamper detection, not secrecy. The bundle must still be signed with a real release certificate if the goal is to reduce SmartScreen friction for end users.
 
 ## Inspect
 
@@ -61,10 +87,21 @@ dotnet run --project src/Avila.CLI -- inspect package --project .\my-app.avw
 ```
 
 `inspect apis` lists registered bridge commands with current allow/deny status. `inspect permissions` explains manifest permission state and validation issues. `inspect package` scans `dist` for package size and blocked files.
-`check` is the fast validation pass. `audit` is the strict security pass. `publish` is the compiled engine bundle flow.
+`check` is the fast validation pass. `audit` is the strict security pass. `audit --production` expects a secure bundle in `dist` and treats missing bundle verification as a production failure. `publish` is the compiled engine bundle flow.
+
+`avila dev` now behaves like a real developer loop:
+
+- hot reload reacts to frontend file changes and the backend runtime can restart or reload based on the project configuration
+- dev errors are redirected to the inspector console screen instead of failing silently in the terminal
+- console errors and frontend runtime errors are captured in a dedicated debug surface
+- `avila dev --debug` adds lifecycle, bridge call, and perf logging
+- `sandbox`, `contextIsolation`, `AreHostObjectsAllowed = false`, and the permission allowlist keep the runtime tight by default
+- the runtime is borderless by default and the public SDK does not expose border tuning APIs
+
+The web frontend should remain the only thing changing rapidly; the engine itself stays controlled and predictable.
 
 The `package` command also keeps `buildclear/dist` synced with the latest release when Avila is running from the source repository. That folder is the clean latest-release snapshot for launcher and smoke-test use.
-`Versionate.txt` is the single release marker. For the current official patch release, the file contains `26.0.1 Startup | Release`.
+`Versionate.txt` is the single release marker. For the current official patch release, the file contains `26.0.3 Release`.
 
 ## Roadmap
 

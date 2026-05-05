@@ -6,5 +6,15 @@
     <LangVersion>latest</LangVersion>
     <Deterministic>true</Deterministic>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Company>AnThophicous</Company>
+    <Authors>AnThophicous</Authors>
+    <Product>Avila WebView2 Desktop App Engine</Product>
+    <AssemblyTitle>Avila</AssemblyTitle>
+    <Description>Windows desktop app engine for HTML, CSS, and JavaScript apps with WebView2, AppView, BrowserApp, secure bundle packaging, and a .NET 8 CLI.</Description>
+    <RepositoryUrl>https://github.com/AnThophicous/Avila-Webview</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageProjectUrl>https://github.com/AnThophicous/Avila-Webview</PackageProjectUrl>
+    <PackageTags>webview2;windows;desktop-app;desktop-engine;app-engine;html;css;javascript;dotnet;electron-alternative;browser-app;appview;secure-bundle;cli</PackageTags>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
   </PropertyGroup>
 </Project>

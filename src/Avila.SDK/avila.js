@@ -235,7 +235,6 @@
       setOpacity: opacity => invoke("window.setOpacity", { opacity: Number(opacity) }),
       setDraggable: enabled => setWindowBoolean("window.setDraggable", enabled),
       setMica: enabled => setWindowBoolean("window.setMica", enabled),
-      setRoundedCorners: enabled => setWindowBoolean("window.setRoundedCorners", enabled),
       on: (eventName, handler) => on(`window.${eventName}`, handler),
       off: (eventName, handler) => off(`window.${eventName}`, handler)
     }),

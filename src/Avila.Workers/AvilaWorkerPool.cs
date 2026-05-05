@@ -12,14 +12,19 @@ public sealed class AvilaWorkerPool : IAsyncDisposable
     private readonly SemaphoreSlim _backpressure;
     private readonly ConcurrentDictionary<int, Task> _workers = new();
     private readonly CancellationTokenSource _shutdown = new();
+    private readonly object _targetSync = new();
     private int _nextWorkerId;
     private int _queueDepth;
+    private int _minimumWorkers;
+    private int _maximumWorkers;
 
     public AvilaWorkerPool(WorkerPoolOptions options, SafeLogger logger)
     {
         _options = options;
         _logger = logger;
         _backpressure = new SemaphoreSlim(options.MaxQueueLength, options.MaxQueueLength);
+        _minimumWorkers = Math.Clamp(options.MinWorkers, 0, options.MaxWorkers);
+        _maximumWorkers = Math.Clamp(options.MaxWorkers, 0, Math.Max(options.MaxWorkers, _minimumWorkers));
         _queues =
         [
             Channel.CreateUnbounded<WorkerItem>(),
@@ -27,7 +32,7 @@ public sealed class AvilaWorkerPool : IAsyncDisposable
             Channel.CreateUnbounded<WorkerItem>()
         ];
 
-        var initialWorkers = Math.Clamp(options.MinWorkers, 0, options.MaxWorkers);
+        var initialWorkers = _minimumWorkers;
         for (var i = 0; i < initialWorkers; i++)
         {
             StartWorker();
@@ -37,6 +42,10 @@ public sealed class AvilaWorkerPool : IAsyncDisposable
     public int QueueDepth => Volatile.Read(ref _queueDepth);
 
     public int ActiveWorkers => _workers.Count;
+
+    public int MinimumWorkers => Volatile.Read(ref _minimumWorkers);
+
+    public int MaximumWorkers => Volatile.Read(ref _maximumWorkers);
 
     public async Task<T> EnqueueAsync<T>(
         Func<CancellationToken, Task<T>> work,
@@ -75,6 +84,25 @@ public sealed class AvilaWorkerPool : IAsyncDisposable
         }
     }
 
+    public void ConfigureTargetWorkers(int minimumWorkers, int maximumWorkers)
+    {
+        lock (_targetSync)
+        {
+            _minimumWorkers = Math.Clamp(minimumWorkers, 0, maximumWorkers);
+            _maximumWorkers = Math.Max(_minimumWorkers, maximumWorkers);
+        }
+
+        PrimeMinimumWorkers();
+    }
+
+    public void PrimeMinimumWorkers()
+    {
+        while (ActiveWorkers < MinimumWorkers && ActiveWorkers < MaximumWorkers)
+        {
+            StartWorker();
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         _shutdown.Cancel();
@@ -97,7 +125,7 @@ public sealed class AvilaWorkerPool : IAsyncDisposable
 
     private void EnsureWorkerCapacity()
     {
-        if (QueueDepth > ActiveWorkers && ActiveWorkers < _options.MaxWorkers)
+        if (QueueDepth > ActiveWorkers && ActiveWorkers < MaximumWorkers)
         {
             StartWorker();
         }
@@ -125,7 +153,7 @@ public sealed class AvilaWorkerPool : IAsyncDisposable
                     continue;
                 }
 
-                if (ActiveWorkers > _options.MinWorkers
+                if (ActiveWorkers > MinimumWorkers
                     && DateTimeOffset.UtcNow - lastWorkAt > _options.IdleShrinkDelay)
                 {
                     return;

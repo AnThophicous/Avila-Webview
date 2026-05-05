@@ -2,6 +2,30 @@
 
 Avila uses a zero-trust frontend model. Local HTML and JavaScript are treated as untrusted input because local apps can still load compromised assets, plugins, or remote content.
 
+## Secure Bundle
+
+`avila package --secure` seals the frontend into `app.avila.bundle` instead of exposing `dist/app` directly.
+
+The runtime verifies:
+
+- bundle manifest signature
+- per-file SHA256 hashes
+- bundle archive integrity
+
+If verification fails, startup is blocked.
+
+The secure bundle flow is for integrity and tamper detection, not for hiding secrets forever. The goal is to stop casual post-build edits, preserve distribution trust, and keep the runtime serving only verified assets.
+
+Recommended commands:
+
+```powershell
+avila package --secure
+avila verify .\dist\app.avila.bundle
+avila audit --production
+```
+
+Runtime serving uses a verified local origin such as `https://app.avila.local`. The WebView2 host answers requests from the verified extraction root after bundle verification, instead of reading an open folder from disk.
+
 ## Bridge Controls
 
 Every bridge request must contain:

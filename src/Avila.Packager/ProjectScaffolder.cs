@@ -95,7 +95,6 @@ public sealed class ProjectScaffolder
                 ["window.center"] = true,
                 ["window.setDraggable"] = true,
                 ["window.setMica"] = true,
-                ["window.setRoundedCorners"] = true,
                 ["browser.back"] = false,
                 ["browser.forward"] = false,
                 ["browser.reload"] = false,
@@ -115,6 +114,7 @@ public sealed class ProjectScaffolder
                 ["os.exec"] = false
             },
             Performance = new PerformanceManifest(),
+            Package = new PackageManifest(),
             Frontend = new FrontendManifest
             {
                 Framework = "vanilla",
@@ -313,7 +313,6 @@ async function boot() {
   const info = await avila.app.info();
   const pong = await avila.system.ping();
   await avila.window.setMica(true);
-  await avila.window.setRoundedCorners(true);
 
   output.textContent = JSON.stringify({ info, pong }, null, 2);
 }

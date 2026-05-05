@@ -2,7 +2,12 @@ using System.Text.Json;
 
 namespace Avila.Security;
 
-public sealed record AvilaProject(string RootPath, string ManifestPath, AvilaManifest Manifest);
+public sealed record AvilaProject(string RootPath, string ManifestPath, AvilaManifest Manifest)
+{
+    public string? BundlePath { get; init; }
+
+    public string? BundleManifestPath { get; init; }
+}
 
 public sealed record ManifestIssue(string Code, string Message, bool IsError);
 
@@ -33,14 +38,45 @@ public static class ManifestLoader
         WriteIndented = true
     };
 
-    public static async Task<AvilaProject> LoadProjectAsync(string projectPath, CancellationToken cancellationToken = default)
+    public static async Task<AvilaProject> LoadProjectAsync(string projectPath, string? secureBundlePublicKeyBase64 = null, CancellationToken cancellationToken = default)
     {
+        var bundlePath = ResolveBundlePath(projectPath);
+        if (bundlePath is not null)
+        {
+            if (string.IsNullOrWhiteSpace(secureBundlePublicKeyBase64))
+            {
+                throw new InvalidOperationException("Secure bundle verification key is required.");
+            }
+
+            return await SecureBundleReader.LoadProjectAsync(projectPath, secureBundlePublicKeyBase64, cancellationToken).ConfigureAwait(false);
+        }
+
         var manifestPath = ResolveManifestPath(projectPath);
         await using var stream = File.OpenRead(manifestPath);
         var manifest = await JsonSerializer.DeserializeAsync<AvilaManifest>(stream, JsonOptions, cancellationToken)
             ?? throw new InvalidOperationException("avila.json is empty or invalid.");
 
         return new AvilaProject(Path.GetDirectoryName(manifestPath)!, manifestPath, manifest);
+    }
+
+    private static string? ResolveBundlePath(string projectPath)
+    {
+        var fullPath = Path.GetFullPath(projectPath);
+        if (File.Exists(fullPath) && Path.GetExtension(fullPath).Equals(".bundle", StringComparison.OrdinalIgnoreCase))
+        {
+            return fullPath;
+        }
+
+        if (Directory.Exists(fullPath))
+        {
+            var candidate = Path.Combine(fullPath, SecureBundleReader.BundleFileName);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     public static string ResolveManifestPath(string projectPath)
@@ -272,6 +308,34 @@ public static class ManifestLoader
         if (manifest.Build.Trim)
         {
             result.Warning("TRIM_DISABLED_FOR_WINDOWS_FORMS", "Trimming is requested, but the current WinForms/WebView2 host publishes with trimming disabled.");
+        }
+
+        if (manifest.Package.SecureBundle)
+        {
+            if (manifest.Package.ExposeAppFolder)
+            {
+                result.Warning("PACKAGE_APP_FOLDER_EXPOSED", "package.exposeAppFolder is true, but secure bundle mode is meant to hide dist/app from the shipped package.");
+            }
+
+            if (!manifest.Package.SignBundle)
+            {
+                result.Warning("PACKAGE_BUNDLE_UNSIGNED", "package.signBundle is false, but secure bundle output still requires a signature for runtime verification.");
+            }
+
+            if (!manifest.Package.VerifyOnStartup)
+            {
+                result.Warning("PACKAGE_VERIFY_DISABLED", "package.verifyOnStartup is false. Secure bundle startup verification is recommended.");
+            }
+
+            if (!manifest.Package.ServeFromBundle)
+            {
+                result.Warning("PACKAGE_SERVE_DISABLED", "package.serveFromBundle is false. Secure bundle mode is meant to serve assets from the sealed bundle.");
+            }
+
+            if (!manifest.Package.RemoveSourceMaps)
+            {
+                result.Warning("PACKAGE_SOURCEMAPS_ENABLED", "package.removeSourceMaps is false. Secure bundle mode is stronger when source maps are removed.");
+            }
         }
 
         if (!IsSafeRelativePath(manifest.Frontend.Source))

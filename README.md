@@ -1,25 +1,38 @@
-# Avila
+# Avila WebView2 Desktop App Engine
 
-Avila is a Windows-first desktop engine for HTML, CSS, and JavaScript apps. It combines .NET 8, WebView2, a secure JS-native bridge, native window customization, a bounded worker pool, and an EXE packaging pipeline.
+Avila is a Windows desktop app engine for HTML, CSS, and JavaScript apps. It combines .NET 8, WebView2, a secure JS-native bridge, native window customization, a bounded worker pool, and an EXE packaging pipeline.
+
+If you are searching for a WebView2 desktop app engine, an Electron alternative for Windows, or a .NET runtime for shipping HTML/CSS/JavaScript apps as secure EXEs, this repository is the platform.
 
 ## Commands
 
 - `avila new` creates an app project.
 - `avila create app <name>` creates an app project.
 - `avila create <name> --url <site>` creates a `browser-app` project.
+- `avila upcheck` checks whether the local engine matches the latest release.
+- `avila upgrade` downloads and installs the latest compiled engine.
 - `avila dev` runs an `AppView` project in WebView2.
+- `avila dev --debug` adds lifecycle, bridge, and perf logging on top of hot reload, the inspector error screen, and the dev console debugger.
 - `avila build` validates `avila.json` and writes a build report.
 - `avila package` publishes a production EXE and copies the app into `dist/app`.
+- `avila package --secure` seals the app into a signed bundle and blocks tamper-at-startup.
+- `avila verify` checks a secure bundle before distribution.
 - `avila check` runs the main validation pass.
 - `avila audit` runs the strict security audit.
-- `avila publish` builds the engine release bundle.
-- `avila benchmark` measures build/package time and output size.
+- `avila publish` builds the engine release bundle and accepts certificate paths for signing.
+- `avila benchmark` measures build/package time, startup time, memory, CPU idle, and output size.
 - `avila version` prints the current engine release marker from `Versionate.txt`.
 - `avila doctor` checks Windows x64, .NET SDK, WebView2 Runtime, and manifest issues.
 
 Generated projects start without Avila branding in the window icon or process name; app identity stays configurable in `avila.json`. The engine release is tracked in `Versionate.txt` and mirrored into the local `buildclear/dist` snapshot on package.
 
+For production apps, `--secure` is the recommended packaging mode. It keeps the frontend sealed inside `app.avila.bundle`, verifies the manifest signature on boot, and stops startup if the bundle changes.
+
 For a detailed release and publish flow, see `docs/publishing.md`.
+
+For the broader platform overview and search-friendly summary, see `docs/overview.md`.
+
+For the deep technical guide, start with `PDocs/README.md`.
 
 ## Quick Start
 
@@ -45,5 +58,14 @@ HTML/CSS/JS app
   -> Avila.exe host / Avila.Core / Avila.Windowing / Avila.Workers
   -> WebView2 renderer, Win32, DWM, optional C++ core
 ```
+
+## Search-Friendly Summary
+
+- Windows desktop app engine for HTML, CSS, and JavaScript
+- WebView2 host with AppView and BrowserApp modes
+- Electron alternative for apps that want a smaller, stricter runtime
+- EXE packaging pipeline with secure bundle sealing and tamper detection
+- sandboxed bridge and context-isolated runtime defaults
+- .NET 8 CLI, runtime, bridge, security, windowing, and tooling layers
 
 See `docs/architecture.md`, `docs/security.md`, `docs/avila-json.md`, `docs/api-reference.md`, `docs/runtime-roadmap.md`, `docs/build.md`, `docs/clean-dist.md`, and `docs/versioning.md`.

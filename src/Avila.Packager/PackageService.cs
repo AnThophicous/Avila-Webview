@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text.Json;
 using Avila.Core;
 using Avila.Diagnostics;
@@ -11,15 +12,17 @@ public sealed class PackageService
     private readonly SafeLogger _logger;
     private readonly BuildService _buildService;
     private readonly ProcessRunner _processRunner;
+    private readonly SecureBundleWriter _secureBundleWriter;
 
     public PackageService(SafeLogger logger)
     {
         _logger = logger;
         _buildService = new BuildService(logger);
         _processRunner = new ProcessRunner(logger);
+        _secureBundleWriter = new SecureBundleWriter();
     }
 
-    public async Task<PackageResult> PackageAsync(string? projectPath, CancellationToken cancellationToken = default)
+    public async Task<PackageResult> PackageAsync(string? projectPath, bool secureBundleOverride = false, CancellationToken cancellationToken = default)
     {
         var build = await _buildService.BuildAsync(projectPath, cancellationToken).ConfigureAwait(false);
         var project = build.Project;
@@ -27,15 +30,43 @@ public sealed class PackageService
         var distDirectory = Path.Combine(project.RootPath, "dist");
         var appDirectory = Path.Combine(distDirectory, "app");
         var publishDirectory = Path.Combine(distDirectory, ".avila-runtime");
+        var packageOptions = project.Manifest.Package;
+        var secureBundle = secureBundleOverride || packageOptions.SecureBundle;
+        RSA? signer = null;
+        var bundleResult = (SecureBundleWriteResult?)null;
 
         ResetDirectory(distDirectory);
-        Directory.CreateDirectory(appDirectory);
         Directory.CreateDirectory(publishDirectory);
         Directory.CreateDirectory(Path.Combine(distDirectory, "logs"));
 
-        CopyProjectFiles(project.RootPath, appDirectory, distDirectory);
+        if (!secureBundle)
+        {
+            Directory.CreateDirectory(appDirectory);
+            CopyProjectFiles(project.RootPath, appDirectory, distDirectory);
+        }
+        else
+        {
+            if (repoRoot is null)
+            {
+                throw new InvalidOperationException("Secure bundle packaging requires the Avila repository source tree so the runtime can embed the bundle key.");
+            }
 
-        var report = build.Report;
+            signer = SecureBundleCrypto.CreateSigner();
+            var publicKeyBase64 = SecureBundleCrypto.ExportPublicKeyBase64(signer);
+            var generatedSealPath = WriteBundleSealSource(repoRoot, publicKeyBase64);
+            try
+            {
+                bundleResult = await CreateBundleAsync(project, distDirectory, packageOptions, signer, publicKeyBase64, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                RemoveBundleSealSource(generatedSealPath);
+            }
+        }
+
+        var report = secureBundle
+            ? build.Report with { ExeMode = "secure bundle" }
+            : build.Report;
 
         if (repoRoot is not null)
         {
@@ -111,7 +142,15 @@ public sealed class PackageService
             MirrorReleaseToBuildClear(repoRoot, distDirectory);
         }
 
-        return new PackageResult(project, finalExe, distDirectory, report);
+        return new PackageResult(
+            project,
+            finalExe,
+            distDirectory,
+            report,
+            bundleResult?.BundlePath,
+            bundleResult?.ManifestPath,
+            bundleResult?.SignaturePath,
+            bundleResult?.PublicKeyPath);
     }
 
     private static string BuildPublishArguments(BuildManifest build, string runtimeProject, string publishDirectory, string? appIcon)
@@ -239,6 +278,71 @@ public sealed class PackageService
 
     private static string Quote(string value) => "\"" + value.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
 
+    private async Task<SecureBundleWriteResult> CreateBundleAsync(
+        AvilaProject project,
+        string distDirectory,
+        PackageManifest packageOptions,
+        RSA signer,
+        string publicKeyBase64,
+        CancellationToken cancellationToken)
+    {
+        var result = await _secureBundleWriter.WriteAsync(
+            project,
+            distDirectory,
+            packageOptions.RemoveSourceMaps,
+            signer,
+            publicKeyBase64,
+            cancellationToken).ConfigureAwait(false);
+
+        var verification = await SecureBundleReader.VerifyAsync(result.BundlePath, publicKeyBase64, cancellationToken).ConfigureAwait(false);
+        if (verification.FileCount != result.FileCount)
+        {
+            throw new InvalidOperationException("Secure bundle verification did not match the written file count.");
+        }
+
+        return result;
+    }
+
+    private static string WriteBundleSealSource(string repoRoot, string publicKeyBase64)
+    {
+        var generatedDirectory = Path.Combine(repoRoot, "src", "Avila.Runtime", "Generated");
+        Directory.CreateDirectory(generatedDirectory);
+        var path = Path.Combine(generatedDirectory, "BundleSeal.g.cs");
+        var content = $$"""
+namespace Avila.Runtime;
+
+public static partial class BundleSeal
+{
+    static BundleSeal()
+    {
+        _publicKeyBase64 = "{{publicKeyBase64}}";
+    }
+}
+""";
+        File.WriteAllText(path, content);
+        return path;
+    }
+
+    private static void RemoveBundleSealSource(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+
+            var directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory) && !Directory.EnumerateFileSystemEntries(directory).Any())
+            {
+                Directory.Delete(directory);
+            }
+        }
+        catch
+        {
+        }
+    }
+
     private static void CleanPackageJunk(string distDirectory)
     {
         foreach (var file in Directory.EnumerateFiles(distDirectory, "*", SearchOption.AllDirectories))
@@ -248,6 +352,17 @@ public sealed class PackageService
                 || extension.Equals(".xml", StringComparison.OrdinalIgnoreCase))
             {
                 File.Delete(file);
+            }
+        }
+
+        foreach (var directory in Directory.EnumerateDirectories(distDirectory, ".avila-secure-stage", SearchOption.AllDirectories))
+        {
+            try
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+            catch
+            {
             }
         }
     }

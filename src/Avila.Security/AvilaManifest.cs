@@ -41,6 +41,9 @@ public sealed class AvilaManifest
     [JsonPropertyName("build")]
     public BuildManifest Build { get; set; } = new();
 
+    [JsonPropertyName("package")]
+    public PackageManifest Package { get; set; } = new();
+
     [JsonPropertyName("frontend")]
     public FrontendManifest Frontend { get; set; } = new();
 
@@ -93,16 +96,19 @@ public sealed class WindowManifest
     public bool Resizable { get; set; } = true;
 
     [JsonPropertyName("borderless")]
-    public bool Borderless { get; set; }
+    public bool Borderless { get; set; } = true;
 
     [JsonPropertyName("roundedCorners")]
-    public bool RoundedCorners { get; set; } = true;
+    public bool RoundedCorners { get; set; }
+
+    [JsonPropertyName("borderRadiusPx")]
+    public int BorderRadiusPx { get; set; }
 
     [JsonPropertyName("cornerPreference")]
     public string CornerPreference { get; set; } = "round";
 
     [JsonPropertyName("mica")]
-    public bool Mica { get; set; } = true;
+    public bool Mica { get; set; }
 
     [JsonPropertyName("micaAlt")]
     public bool MicaAlt { get; set; }
@@ -112,6 +118,9 @@ public sealed class WindowManifest
 
     [JsonPropertyName("blur")]
     public bool Blur { get; set; }
+
+    [JsonPropertyName("blurAmount")]
+    public double BlurAmount { get; set; }
 
     [JsonPropertyName("transparent")]
     public bool Transparent { get; set; }
@@ -154,6 +163,12 @@ public sealed class SecurityManifest
 
     [JsonPropertyName("tokenSecurity")]
     public string TokenSecurity { get; set; } = "session-capability";
+
+    [JsonPropertyName("sandbox")]
+    public bool Sandbox { get; set; } = true;
+
+    [JsonPropertyName("contextIsolation")]
+    public bool ContextIsolation { get; set; } = true;
 }
 
 public sealed class FileSystemManifest
@@ -246,7 +261,16 @@ public sealed class PerformanceManifest
     public bool PreloadBridge { get; set; } = true;
 
     [JsonPropertyName("warmWorkerPool")]
-    public bool WarmWorkerPool { get; set; } = true;
+    public bool WarmWorkerPool { get; set; }
+
+    [JsonPropertyName("startupWorkers")]
+    public int StartupWorkers { get; set; } = 8;
+
+    [JsonPropertyName("openWorkers")]
+    public int OpenWorkers { get; set; } = 3;
+
+    [JsonPropertyName("idleWorkers")]
+    public int IdleWorkers { get; set; } = 1;
 
     [JsonPropertyName("workerPoolMin")]
     public int WorkerPoolMin { get; set; } = 1;
@@ -260,11 +284,39 @@ public sealed class PerformanceManifest
     [JsonPropertyName("shrinkDelayMs")]
     public int ShrinkDelayMs { get; set; } = 8_000;
 
+    [JsonPropertyName("idleSuspendAfterMs")]
+    public int IdleSuspendAfterMs { get; set; } = 300_000;
+
+    [JsonPropertyName("cacheRenderedUi")]
+    public bool CacheRenderedUi { get; set; } = true;
+
+    [JsonPropertyName("cacheBridgeCalls")]
+    public bool CacheBridgeCalls { get; set; } = true;
+
     [JsonPropertyName("cacheStaticAssets")]
     public bool CacheStaticAssets { get; set; } = true;
 
     [JsonPropertyName("lazyLoadNativeModules")]
     public bool LazyLoadNativeModules { get; set; } = true;
+
+    [JsonPropertyName("preserveStateOnReload")]
+    public bool PreserveStateOnReload { get; set; } = true;
+
+    [JsonPropertyName("browserFlags")]
+    public string[] BrowserFlags { get; set; } =
+    [
+        "--disable-background-networking",
+        "--disable-component-update",
+        "--disable-default-apps",
+        "--disable-extensions",
+        "--disable-sync",
+        "--disable-renderer-backgrounding",
+        "--disable-background-timer-throttling",
+        "--disable-domain-reliability",
+        "--disable-features=Translate,BackForwardCache,InterestFeedContentSuggestions,MediaRouter,OptimizationHints",
+        "--metrics-recording-only",
+        "--no-first-run"
+    ];
 }
 
 public sealed class BuildManifest
@@ -289,6 +341,27 @@ public sealed class BuildManifest
 
     [JsonPropertyName("outputName")]
     public string OutputName { get; set; } = "";
+}
+
+public sealed class PackageManifest
+{
+    [JsonPropertyName("secureBundle")]
+    public bool SecureBundle { get; set; }
+
+    [JsonPropertyName("signBundle")]
+    public bool SignBundle { get; set; } = true;
+
+    [JsonPropertyName("verifyOnStartup")]
+    public bool VerifyOnStartup { get; set; } = true;
+
+    [JsonPropertyName("serveFromBundle")]
+    public bool ServeFromBundle { get; set; } = true;
+
+    [JsonPropertyName("removeSourceMaps")]
+    public bool RemoveSourceMaps { get; set; } = true;
+
+    [JsonPropertyName("exposeAppFolder")]
+    public bool ExposeAppFolder { get; set; }
 }
 
 public sealed class FrontendManifest

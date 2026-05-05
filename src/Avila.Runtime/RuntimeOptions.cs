@@ -1,3 +1,5 @@
+using Avila.Security;
+
 namespace Avila.Runtime;
 
 public sealed class RuntimeOptions
@@ -8,6 +10,10 @@ public sealed class RuntimeOptions
 
     public bool? DevToolsOverride { get; init; }
 
+    public string? BenchmarkFilePath { get; init; }
+
+    public bool Debug { get; init; }
+
     public IReadOnlyList<string> Arguments { get; init; } = [];
 
     public static RuntimeOptions Parse(string[] args)
@@ -15,6 +21,8 @@ public sealed class RuntimeOptions
         var projectPath = "";
         var mode = "production";
         bool? devTools = null;
+        string? benchmarkFilePath = null;
+        var debug = false;
 
         for (var index = 0; index < args.Length; index++)
         {
@@ -33,6 +41,12 @@ public sealed class RuntimeOptions
                 case "--no-devtools":
                     devTools = false;
                     break;
+                case "--benchmark-file" when index + 1 < args.Length:
+                    benchmarkFilePath = args[++index];
+                    break;
+                case "--debug":
+                    debug = true;
+                    break;
             }
         }
 
@@ -41,12 +55,20 @@ public sealed class RuntimeOptions
             ProjectPath = string.IsNullOrWhiteSpace(projectPath) ? ResolveDefaultProjectPath() : projectPath,
             Mode = mode.Equals("dev", StringComparison.OrdinalIgnoreCase) ? "dev" : "production",
             DevToolsOverride = devTools,
+            BenchmarkFilePath = benchmarkFilePath,
+            Debug = debug,
             Arguments = args.ToArray()
         };
     }
 
     private static string ResolveDefaultProjectPath()
     {
+        if (File.Exists(Path.Combine(AppContext.BaseDirectory, SecureBundleReader.BundleFileName))
+            || File.Exists(Path.Combine(AppContext.BaseDirectory, SecureBundleReader.ManifestFileName)))
+        {
+            return AppContext.BaseDirectory;
+        }
+
         var packagedApp = Path.Combine(AppContext.BaseDirectory, "app");
         if (File.Exists(Path.Combine(packagedApp, "avila.json")))
         {

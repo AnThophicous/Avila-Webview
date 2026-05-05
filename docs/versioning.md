@@ -7,15 +7,16 @@ The release marker lives in `Versionate.txt` and is the single source of truth f
 Current official patch release:
 
 ```txt
-26.0.1 Startup | Release
+26.0.3 Release
 ```
 
 Meaning:
 
 - `26` matches the 2026 release cycle.
 - `0` is the first official release in that cycle.
-- `1` is the first patch correction after the initial release.
-- `Startup` marks this as a startup-stability release.
-- future patch releases can move to `26.0.2`, `26.0.3`, and so on if needed.
+- `2` is the second patch correction after the initial release.
+- future patch releases can move to `26.0.3`, `26.0.4`, and so on if needed.
+
+The `avila upcheck` command compares the local release marker against the current GitHub release and reports whether the engine is already up to date. The `avila upgrade` command downloads the latest compiled release, installs it, and updates PATH according to the selected scope.
 
 The packaged output mirrors `Versionate.txt` into `dist` and `buildclear/dist`, so the executable and the release folder stay in sync.

@@ -14,12 +14,26 @@ internal static class Program
         var options = RuntimeOptions.Parse(args);
         try
         {
-            var project = ManifestLoader.LoadProjectAsync(options.ProjectPath).GetAwaiter().GetResult();
+            var project = ManifestLoader.LoadProjectAsync(options.ProjectPath, BundleSeal.PublicKeyBase64).GetAwaiter().GetResult();
             var validation = ManifestLoader.Validate(project);
             if (!validation.IsValid)
             {
                 var message = string.Join(Environment.NewLine, validation.Errors.Select(error => $"{error.Code}: {error.Message}"));
-                MessageBox.Show(message, "Invalid avila.json", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (options.Mode.Equals("dev", StringComparison.OrdinalIgnoreCase))
+                {
+                    using var form = new DevErrorForm(DevErrorSnapshot.FromConsoleMessage(
+                        "Avila validation error",
+                        "Manifest",
+                        message,
+                        project.RootPath,
+                        0,
+                        0));
+                    Application.Run(form);
+                }
+                else
+                {
+                    MessageBox.Show(message, "Invalid avila.json", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
                 return 2;
             }
 
@@ -30,7 +44,10 @@ internal static class Program
             var logger = new SafeLogger(
                 logDirectory,
                 sanitize: project.Manifest.Security.SanitizeLogs,
-                verbose: options.Mode.Equals("dev", StringComparison.OrdinalIgnoreCase));
+                verbose: options.Mode.Equals("dev", StringComparison.OrdinalIgnoreCase) || options.Debug);
+
+            logger.Trace($"runtime mode: {options.Mode}");
+            logger.Trace($"startup stage: {RuntimeStage.BackgroundPreparation}");
 
             foreach (var warning in validation.Warnings)
             {
@@ -56,18 +73,38 @@ internal static class Program
             if (policyErrors.Length > 0)
             {
                 var message = string.Join(Environment.NewLine, policyErrors.Select(issue => $"{issue.Code}: {issue.Message}"));
-                MessageBox.Show(message, "Avila policy resolver", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (options.Mode.Equals("dev", StringComparison.OrdinalIgnoreCase))
+                {
+                    using var form = new DevErrorForm(DevErrorSnapshot.FromConsoleMessage(
+                        "Avila policy resolver",
+                        "Policy",
+                        message,
+                        project.RootPath,
+                        0,
+                        0));
+                    Application.Run(form);
+                }
+                else
+                {
+                    MessageBox.Show(message, "Avila policy resolver", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
                 return 3;
             }
 
             var diagnostics = new DiagnosticsCollector();
             var workers = new AvilaWorkerPool(new WorkerPoolOptions
             {
-                MinWorkers = project.Manifest.Performance.WarmWorkerPool ? project.Manifest.Performance.WorkerPoolMin : 0,
+                MinWorkers = project.Manifest.Performance.WarmWorkerPool ? project.Manifest.Performance.StartupWorkers : 0,
                 MaxWorkers = project.Manifest.Performance.WorkerPoolMax,
+                StartupWorkers = project.Manifest.Performance.StartupWorkers,
+                OpenWorkers = project.Manifest.Performance.OpenWorkers,
+                IdleWorkers = project.Manifest.Performance.IdleWorkers,
                 IdleShrinkDelay = TimeSpan.FromMilliseconds(project.Manifest.Performance.ShrinkDelayMs),
                 DefaultTimeout = TimeSpan.FromMilliseconds(project.Manifest.Security.BridgeTimeoutMs)
             }, logger);
+            workers.ConfigureTargetWorkers(
+                project.Manifest.Performance.StartupWorkers,
+                project.Manifest.Performance.WorkerPoolMax);
 
             var capabilities = new CapabilityManager();
             Application.Run(new AvilaApplicationForm(project, options, capabilities, logger, diagnostics, workers, logDirectory));
@@ -75,7 +112,15 @@ internal static class Program
         }
         catch (Exception exception)
         {
-            MessageBox.Show(exception.Message, "Avila", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (options.Mode.Equals("dev", StringComparison.OrdinalIgnoreCase))
+            {
+                using var form = new DevErrorForm(DevErrorSnapshot.FromException("Avila startup failure", exception));
+                Application.Run(form);
+            }
+            else
+            {
+                MessageBox.Show(exception.Message, "Avila", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
             return 1;
         }
     }

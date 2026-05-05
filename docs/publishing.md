@@ -30,7 +30,7 @@ required in source control.
 Avila uses a calendar-based release marker. The current official patch release is:
 
 ```txt
-26.0.1 Startup | Release
+26.0.3 Release
 ```
 
 That value is stored in `Versionate.txt` and is resolved by the CLI and
@@ -40,12 +40,15 @@ packaging pipeline.
 
 1. Update code and docs.
 2. Run `dotnet build` and `dotnet test`.
-3. Run `avila build` on the target project or template.
-4. Run `avila package` to produce the clean EXE output for apps.
-5. Publish the CLI once to a bootstrap folder, then run `avila publish` from that compiled executable.
-6. Inspect the generated package, release bundle, and the local `buildclear/dist` snapshot.
-7. Commit the source changes only.
-8. Push the branch and tag to GitHub.
+3. Run `avila upcheck` to verify the local engine marker.
+4. Run `avila upgrade` when you want the latest compiled release installed locally.
+5. Run `avila build` on the target project or template.
+6. Run `avila package` to produce the clean EXE output for apps.
+7. Publish the CLI once to a bootstrap folder, then run `avila publish` from that compiled executable.
+8. If you have a release certificate, pass it with `--cert` and `--cert-password` so the final EXE and bundle are signed.
+9. Inspect the generated package, secure bundle, release bundle, and the local `buildclear/dist` snapshot.
+10. Commit the source changes only.
+11. Push the branch and tag to GitHub.
 
 Example release bootstrap:
 
@@ -78,3 +81,10 @@ any installer or binary release. The GitHub Release should carry the compiled
 bundle so developers can download Avila ready to run without building from
 source. For source-tree release generation, use a compiled bootstrap CLI first
 so the running process does not lock its own build output.
+
+For production distribution, prefer the secure bundle path:
+
+- `avila package --secure` seals frontend assets into an integrity-checked bundle.
+- `avila verify` validates the bundle before shipment.
+- `avila audit --production` checks that secure bundle enforcement is active.
+- `avila dev` remains the fast edit loop, while `avila upgrade` is the user-facing installer path.

@@ -172,16 +172,6 @@ Required permission:
 "window.setMica": true
 ```
 
-### `avila.window.setRoundedCorners(enabled)`
-
-Applies rounded corner preference when supported.
-
-Required permission:
-
-```json
-"window.setRoundedCorners": true
-```
-
 Additional main-window commands now available:
 
 - `close()`, `show()`, `hide()`, `focus()`, `blur()`
@@ -191,6 +181,7 @@ Additional main-window commands now available:
 - `setMinSize(width, height)`, `setMaxSize(width, height)`
 - `setPosition(x, y)`, `getBounds()`
 - `setResizable(enabled)`, `setDecorations(enabled)`, `setOpacity(value)`
+- Border APIs are intentionally not part of the public SDK. The runtime is borderless by default and resizes through native hit testing.
 
 Window events:
 

@@ -28,6 +28,9 @@ public sealed class ReleaseService
     public async Task<ReleaseResult> PublishAsync(
         string? outputDirectory = null,
         bool sign = false,
+        string? certificatePath = null,
+        string? certificatePassword = null,
+        string? timestampUrl = null,
         string runtimeIdentifier = "win-x64",
         CancellationToken cancellationToken = default)
     {
@@ -65,9 +68,15 @@ public sealed class ReleaseService
             BuildReleaseNotes(versionText),
             cancellationToken).ConfigureAwait(false);
 
-        if (sign)
+        if (sign || !string.IsNullOrWhiteSpace(certificatePath))
         {
-            await SignBundleAsync(bundleDirectory, repoRoot, cancellationToken).ConfigureAwait(false);
+            await SignBundleAsync(
+                bundleDirectory,
+                repoRoot,
+                certificatePath,
+                certificatePassword,
+                timestampUrl,
+                cancellationToken).ConfigureAwait(false);
         }
 
         var zipPath = Path.Combine(releaseRoot, $"{label}.zip");
@@ -117,11 +126,10 @@ public sealed class ReleaseService
             "-c Release",
             $"-r {runtimeIdentifier}",
             $"-o {Quote(publishDirectory)}",
-            "--self-contained true",
-            "-p:PublishSingleFile=true",
+            "--self-contained false",
+            "-p:PublishSingleFile=false",
             "-p:PublishTrimmed=false",
-            "-p:PublishReadyToRun=true",
-            "-p:EnableCompressionInSingleFile=true",
+            "-p:PublishReadyToRun=false",
             "-p:DebugType=None",
             "-p:DebugSymbols=false"
         });
@@ -133,16 +141,22 @@ public sealed class ReleaseService
         }
     }
 
-    private async Task SignBundleAsync(string bundleDirectory, string repoRoot, CancellationToken cancellationToken)
+    private async Task SignBundleAsync(
+        string bundleDirectory,
+        string repoRoot,
+        string? certificatePath,
+        string? certificatePassword,
+        string? timestampUrl,
+        CancellationToken cancellationToken)
     {
-        var certPath = Environment.GetEnvironmentVariable("AVILA_SIGN_CERT_PFX");
-        var certPassword = Environment.GetEnvironmentVariable("AVILA_SIGN_CERT_PASSWORD");
-        if (string.IsNullOrWhiteSpace(certPath) || string.IsNullOrWhiteSpace(certPassword))
+        certificatePath ??= Environment.GetEnvironmentVariable("AVILA_SIGN_CERT_PFX");
+        certificatePassword ??= Environment.GetEnvironmentVariable("AVILA_SIGN_CERT_PASSWORD");
+        if (string.IsNullOrWhiteSpace(certificatePath) || string.IsNullOrWhiteSpace(certificatePassword))
         {
             throw new InvalidOperationException("Signing was requested, but AVILA_SIGN_CERT_PFX and AVILA_SIGN_CERT_PASSWORD are not configured.");
         }
 
-        var timestampUrl = Environment.GetEnvironmentVariable("AVILA_SIGN_TIMESTAMP_URL");
+        timestampUrl ??= Environment.GetEnvironmentVariable("AVILA_SIGN_TIMESTAMP_URL");
         if (string.IsNullOrWhiteSpace(timestampUrl))
         {
             timestampUrl = "http://timestamp.digicert.com";
@@ -158,8 +172,8 @@ public sealed class ReleaseService
             var arguments = string.Join(' ', new[]
             {
                 "sign",
-                $"/f {Quote(certPath)}",
-                $"/p {Quote(certPassword)}",
+                $"/f {Quote(certificatePath)}",
+                $"/p {Quote(certificatePassword)}",
                 "/fd SHA256",
                 $"/tr {Quote(timestampUrl)}",
                 "/td SHA256",

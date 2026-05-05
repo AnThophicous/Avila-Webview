@@ -10,3 +10,4 @@ build/
 **/webview2-data/
 **/logs/
 buildclear/release/
+src/Avila.Runtime/Generated/

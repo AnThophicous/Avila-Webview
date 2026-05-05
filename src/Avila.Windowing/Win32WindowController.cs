@@ -6,6 +6,7 @@ namespace Avila.Windowing;
 
 public sealed class Win32WindowController
 {
+    private const int WM_NCHITTEST = 0x0084;
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     private const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
     private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
@@ -15,12 +16,22 @@ public sealed class Win32WindowController
     private const int DWMSBT_NONE = 1;
     private const int DWMSBT_MAINWINDOW = 2;
     private const int DWMSBT_TABBEDWINDOW = 4;
+    private const int HTCLIENT = 1;
+    private const int HTCAPTION = 2;
+    private const int HTLEFT = 10;
+    private const int HTRIGHT = 11;
+    private const int HTTOP = 12;
+    private const int HTTOPLEFT = 13;
+    private const int HTTOPRIGHT = 14;
+    private const int HTBOTTOM = 15;
+    private const int HTBOTTOMLEFT = 16;
+    private const int HTBOTTOMRIGHT = 17;
     private const int WM_NCLBUTTONDOWN = 0x00A1;
-    private const int HTCAPTION = 0x0002;
 
     private readonly Form _form;
     private bool _draggable = true;
     private bool _fullscreen;
+    private int _cornerRadiusPx;
     private bool _resizable = true;
     private bool _hasDecorations = true;
     private Rectangle _restoreBounds;
@@ -35,7 +46,8 @@ public sealed class Win32WindowController
     {
         _draggable = manifest.Draggable;
         _resizable = manifest.Resizable;
-        _hasDecorations = !manifest.Borderless;
+        _hasDecorations = false;
+        _cornerRadiusPx = manifest.BorderRadiusPx;
         _form.Text = _form.Text.Length == 0 ? "Avila App" : _form.Text;
         _form.StartPosition = manifest.Center ? FormStartPosition.CenterScreen : FormStartPosition.Manual;
         _form.ClientSize = new Size(manifest.Width, manifest.Height);
@@ -44,7 +56,6 @@ public sealed class Win32WindowController
         ApplyBorderStyle();
 
         ApplyDarkMode();
-        SetRoundedCorners(manifest.RoundedCorners);
 
         if (manifest.Mica || manifest.MicaAlt)
         {
@@ -239,7 +250,7 @@ public sealed class Win32WindowController
     {
         return OnUiThreadAsync(() =>
         {
-            _hasDecorations = enabled;
+            _hasDecorations = false;
             ApplyBorderStyle();
         }, cancellationToken);
     }
@@ -261,7 +272,7 @@ public sealed class Win32WindowController
 
     public Task SetRoundedCornersAsync(bool enabled, CancellationToken cancellationToken)
     {
-        return OnUiThreadAsync(() => SetRoundedCorners(enabled), cancellationToken);
+        return OnUiThreadAsync(() => SetRoundedCorners(enabled, _cornerRadiusPx), cancellationToken);
     }
 
     public Task BeginDragAsync(CancellationToken cancellationToken)
@@ -309,9 +320,8 @@ public sealed class Win32WindowController
             return;
         }
 
-        _form.FormBorderStyle = _hasDecorations
-            ? _resizable ? FormBorderStyle.Sizable : FormBorderStyle.FixedSingle
-            : FormBorderStyle.None;
+        _form.FormBorderStyle = FormBorderStyle.None;
+        _form.ControlBox = false;
         _form.MaximizeBox = _resizable;
         _form.MinimizeBox = true;
     }
@@ -334,15 +344,93 @@ public sealed class Win32WindowController
         }
     }
 
-    private void SetRoundedCorners(bool enabled)
+    private void SetRoundedCorners(bool enabled, int radiusPx)
     {
-        if (!_form.IsHandleCreated)
+        _cornerRadiusPx = 0;
+    }
+
+    private void SetBlur(bool enabled, double blurAmount)
+    {
+        _form.Opacity = 1d;
+    }
+
+    public bool HandleWndProc(ref Message m)
+    {
+        if (m.Msg != WM_NCHITTEST || !_resizable || _fullscreen || !_form.IsHandleCreated || _form.IsDisposed)
         {
-            return;
+            return false;
         }
 
-        var preference = enabled ? DWMWCP_ROUND : DWMWCP_DONOTROUND;
-        TryDwmSetWindowAttribute(_form.Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref preference);
+        var hit = HitTest(m.LParam);
+        if (hit == HTCLIENT)
+        {
+            return false;
+        }
+
+        m.Result = (IntPtr)hit;
+        return true;
+    }
+
+    private int HitTest(IntPtr lParam)
+    {
+        var point = ToPoint(lParam);
+        var client = _form.PointToClient(point);
+        const int grip = 8;
+
+        var left = client.X <= grip;
+        var right = client.X >= _form.ClientSize.Width - grip;
+        var top = client.Y <= grip;
+        var bottom = client.Y >= _form.ClientSize.Height - grip;
+
+        if (top && left)
+        {
+            return HTTOPLEFT;
+        }
+
+        if (top && right)
+        {
+            return HTTOPRIGHT;
+        }
+
+        if (bottom && left)
+        {
+            return HTBOTTOMLEFT;
+        }
+
+        if (bottom && right)
+        {
+            return HTBOTTOMRIGHT;
+        }
+
+        if (left)
+        {
+            return HTLEFT;
+        }
+
+        if (right)
+        {
+            return HTRIGHT;
+        }
+
+        if (top)
+        {
+            return HTTOP;
+        }
+
+        if (bottom)
+        {
+            return HTBOTTOM;
+        }
+
+        return HTCLIENT;
+    }
+
+    private static Point ToPoint(IntPtr lParam)
+    {
+        var value = lParam.ToInt64();
+        var x = unchecked((short)(value & 0xFFFF));
+        var y = unchecked((short)((value >> 16) & 0xFFFF));
+        return new Point(x, y);
     }
 
     private void ApplyDarkMode()
@@ -452,4 +540,19 @@ public sealed class Win32WindowController
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetDesktopWindow();
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    private static extern IntPtr CreateRoundRectRgn(int leftRect, int topRect, int rightRect, int bottomRect, int widthEllipse, int heightEllipse);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool redraw);
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DeleteObject(IntPtr hObject);
+}
+
+internal static class NativeBoolExtensions
+{
+    public static bool ToBool(this int value) => value != 0;
 }
