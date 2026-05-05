@@ -126,11 +126,10 @@ public sealed class ReleaseService
             "-c Release",
             $"-r {runtimeIdentifier}",
             $"-o {Quote(publishDirectory)}",
-            "--self-contained true",
-            "-p:PublishSingleFile=true",
+            "--self-contained false",
+            "-p:PublishSingleFile=false",
             "-p:PublishTrimmed=false",
-            "-p:PublishReadyToRun=true",
-            "-p:EnableCompressionInSingleFile=true",
+            "-p:PublishReadyToRun=false",
             "-p:DebugType=None",
             "-p:DebugSymbols=false"
         });
